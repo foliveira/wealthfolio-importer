@@ -41,16 +41,7 @@ async function extractWithAnthropic(apiKey, images, signal) {
 			model: 'claude-sonnet-4-5-20250514',
 			max_tokens: 4096,
 			system: SYSTEM_PROMPT,
-			messages: [{ role: 'user', content }],
-			output_config: {
-				format: {
-					type: 'json_schema',
-					json_schema: {
-						name: 'transactions',
-						schema: TRANSACTION_SCHEMA
-					}
-				}
-			}
+			messages: [{ role: 'user', content }]
 		}),
 		signal
 	});
@@ -113,22 +104,31 @@ async function extractWithOpenAI(apiKey, images, signal) {
 }
 
 function parseResponse(text) {
-	if (!text) throw new Error('Empty response from AI provider.');
+	if (!text) throw new Error('Empty response from AI provider. The model returned no content.');
+
+	let parsed;
 
 	// Try direct parse first
 	try {
-		const parsed = JSON.parse(text);
-		return parsed.transactions || [];
+		parsed = JSON.parse(text);
 	} catch {
 		// Fallback: strip markdown code fences
 		const stripped = text.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
 		try {
-			const parsed = JSON.parse(stripped);
-			return parsed.transactions || [];
+			parsed = JSON.parse(stripped);
 		} catch {
-			throw new Error(`Could not parse AI response. Raw output:\n\n${text.slice(0, 500)}`);
+			throw new Error(`Could not parse AI response as JSON.\n\nRaw output:\n${text.slice(0, 1000)}`);
 		}
 	}
+
+	// Handle both { transactions: [...] } and direct array [...]
+	const transactions = Array.isArray(parsed) ? parsed : parsed.transactions;
+
+	if (!Array.isArray(transactions)) {
+		throw new Error(`Unexpected response structure. Expected "transactions" array.\n\nParsed output:\n${JSON.stringify(parsed).slice(0, 1000)}`);
+	}
+
+	return transactions;
 }
 
 function apiError(status, message) {
