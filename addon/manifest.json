@@ -1,0 +1,17 @@
+{
+  "id": "ai-importer",
+  "name": "AI Importer",
+  "version": "0.1.0",
+  "main": "dist/addon.js",
+  "description": "Import transactions from PDFs and images using AI vision models",
+  "author": "foliveira",
+  "permissions": [
+    "accounts.getAll",
+    "activities.import",
+    "activities.checkImport",
+    "secrets.set",
+    "secrets.get",
+    "secrets.delete"
+  ],
+  "sdkVersion": "1.0.0"
+}
