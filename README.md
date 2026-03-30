@@ -12,7 +12,7 @@ Extract transactions from brokerage PDFs and images using AI, then download a CS
 
 ## Features
 
-- **AI-powered extraction** — uses vision models (GPT-4o or Claude) to read any brokerage statement format
+- **AI-powered extraction** — uses vision models (GPT-5.4-mini or Claude) to read any brokerage statement format
 - **Editable review table** — fix any extraction errors before exporting
 - **Multi-provider support** — choose OpenAI or Anthropic based on what you have access to
 - **Fully client-side** — your documents and API keys never touch our servers
@@ -21,7 +21,7 @@ Extract transactions from brokerage PDFs and images using AI, then download a CS
 ## Requirements
 
 You need an API key from one of:
-- [OpenAI](https://platform.openai.com/api-keys) (GPT-4o)
+- [OpenAI](https://platform.openai.com/api-keys) (GPT-5.4-mini)
 - [Anthropic](https://console.anthropic.com/) (Claude)
 
 ## Development

@@ -84,7 +84,7 @@ async function extractWithOpenAI(apiKey, images, signal) {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify({
-			model: 'gpt-4o',
+			model: 'gpt-5.4-mini',
 			max_tokens: 4096,
 			messages: [
 				{ role: 'system', content: SYSTEM_PROMPT },

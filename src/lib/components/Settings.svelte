@@ -11,7 +11,7 @@
 		<label for="provider">AI Provider</label>
 		<select id="provider" bind:value={app.provider}>
 			<option value="anthropic">Anthropic (Claude)</option>
-			<option value="openai">OpenAI (GPT-4o)</option>
+			<option value="openai">OpenAI (GPT-5.4-mini)</option>
 		</select>
 	</div>
 
