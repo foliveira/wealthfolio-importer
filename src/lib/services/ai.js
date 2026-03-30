@@ -85,7 +85,7 @@ async function extractWithOpenAI(apiKey, images, signal) {
 		},
 		body: JSON.stringify({
 			model: 'gpt-5.4-mini',
-			max_tokens: 4096,
+			max_completion_tokens: 4096,
 			messages: [
 				{ role: 'system', content: SYSTEM_PROMPT },
 				{ role: 'user', content }
