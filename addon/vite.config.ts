@@ -1,27 +1,37 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import externalGlobals from 'rollup-plugin-external-globals';
 import { copyFileSync } from 'fs';
 import { resolve } from 'path';
 
 export default defineConfig({
+  plugins: [react()],
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     lib: {
       entry: 'src/addon.tsx',
+      fileName: () => 'addon.js',
       formats: ['es'],
-      fileName: 'addon',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime', '@wealthfolio/ui', '@wealthfolio/addon-sdk'],
-    },
-    outDir: 'dist',
-  },
-  plugins: [
-    {
-      name: 'copy-pdf-worker',
-      closeBundle() {
-        const src = resolve('node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
-        const dest = resolve('dist/pdf.worker.min.mjs');
-        copyFileSync(src, dest);
+      external: ['react', 'react-dom'],
+      plugins: [
+        externalGlobals({
+          react: 'React',
+          'react-dom': 'ReactDOM',
+        }),
+      ],
+      output: {
+        globals: {
+          react: 'React',
+          'react-dom': 'ReactDOM',
+        },
       },
     },
-  ],
+    outDir: 'dist',
+    minify: false,
+    sourcemap: true,
+  },
 });

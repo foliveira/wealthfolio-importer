@@ -30,10 +30,7 @@ jobs:
 
       - name: Create release ZIP
         working-directory: addon
-        run: |
-          cp manifest.json dist/
-          cd dist
-          zip -r ../ai-importer.zip .
+        run: zip -r ai-importer.zip manifest.json dist/ README.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
