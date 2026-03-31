@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA, type ExtractedTransaction } from './prompt';
+import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction } from './prompt';
 
 export type Provider = 'anthropic' | 'openai';
 
@@ -127,7 +127,22 @@ function parseResponse(text: string | undefined | null): ExtractedTransaction[] 
     throw new Error(`Unexpected response structure.\n\n${JSON.stringify(parsed).slice(0, 1000)}`);
   }
 
-  return transactions as ExtractedTransaction[];
+  return transactions.map(validateTransaction);
+}
+
+function validateTransaction(t: Record<string, unknown>): ExtractedTransaction {
+  return {
+    date: typeof t.date === 'string' ? t.date : '',
+    symbol: typeof t.symbol === 'string' ? t.symbol : '',
+    quantity: typeof t.quantity === 'number' && isFinite(t.quantity) ? t.quantity : 0,
+    activityType: (ACTIVITY_TYPES as readonly string[]).includes(t.activityType as string)
+      ? (t.activityType as ExtractedTransaction['activityType'])
+      : 'BUY',
+    unitPrice: typeof t.unitPrice === 'number' && isFinite(t.unitPrice) ? t.unitPrice : 0,
+    currency: typeof t.currency === 'string' && t.currency.length <= 5 ? t.currency : 'USD',
+    fee: typeof t.fee === 'number' && isFinite(t.fee) ? t.fee : 0,
+    amount: typeof t.amount === 'number' && isFinite(t.amount) ? t.amount : 0,
+  };
 }
 
 function apiError(status: number, message: string): Error {

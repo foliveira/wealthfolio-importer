@@ -1,14 +1,17 @@
 export const ACTIVITY_TYPES = [
 	'BUY',
 	'SELL',
+	'SPLIT',
 	'DIVIDEND',
 	'DEPOSIT',
 	'WITHDRAWAL',
-	'TAX',
-	'FEE',
-	'INTEREST',
 	'TRANSFER_IN',
-	'TRANSFER_OUT'
+	'TRANSFER_OUT',
+	'INTEREST',
+	'CREDIT',
+	'FEE',
+	'TAX',
+	'ADJUSTMENT',
 ];
 
 export const CSV_COLUMNS = [

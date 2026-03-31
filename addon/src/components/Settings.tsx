@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { SecretsAPI } from '../types';
 import type { Provider } from '../services/ai';
 
@@ -12,28 +12,33 @@ interface SettingsProps {
 
 export function Settings({ secrets, provider, onProviderChange, apiKey, onApiKeyChange }: SettingsProps) {
   const [showKey, setShowKey] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     secrets.get('provider').then((p) => {
       if (p === 'openai' || p === 'anthropic') onProviderChange(p);
-    });
+    }).catch(() => {});
     secrets.get('api-key').then((k) => {
       if (k) onApiKeyChange(k);
-    });
+    }).catch(() => {});
   }, []);
 
-  const handleProviderChange = async (p: Provider) => {
+  const handleProviderChange = (p: Provider) => {
     onProviderChange(p);
-    await secrets.set('provider', p);
+    secrets.set('provider', p).catch(() => {});
   };
 
-  const handleKeyChange = async (key: string) => {
+  const handleKeyChange = (key: string) => {
     onApiKeyChange(key);
-    if (key) {
-      await secrets.set('api-key', key);
-    } else {
-      await secrets.delete('api-key');
-    }
+    // Debounce secret persistence
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      if (key) {
+        secrets.set('api-key', key).catch(() => {});
+      } else {
+        secrets.delete('api-key').catch(() => {});
+      }
+    }, 500);
   };
 
   return (

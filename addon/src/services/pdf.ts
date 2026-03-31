@@ -4,18 +4,10 @@ const MAX_PAGES = 20;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-let workerInitialized = false;
-
-function initWorker() {
-  if (workerInitialized) return;
-  // In addon context, pdf.worker may need to be served differently.
-  // Try the CDN fallback which works in most webview environments.
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  workerInitialized = true;
-}
+// Use local worker bundled alongside the addon
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(/* @vite-ignore */ './pdf.worker.min.mjs', import.meta.url).toString();
 
 export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
-  initWorker();
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
@@ -28,7 +20,8 @@ export async function pdfToImages(file: File): Promise<{ images: string[]; pageC
 
   const images: string[] = [];
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to create canvas 2D context.');
 
   for (let i = 1; i <= pageCount; i++) {
     const page = await pdf.getPage(i);

@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA } from '$lib/prompt.js';
+import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES } from '$lib/prompt.js';
 
 /**
  * Extract transactions from images using the selected AI provider.
@@ -128,7 +128,20 @@ function parseResponse(text) {
 		throw new Error(`Unexpected response structure. Expected "transactions" array.\n\nParsed output:\n${JSON.stringify(parsed).slice(0, 1000)}`);
 	}
 
-	return transactions;
+	return transactions.map(validateTransaction);
+}
+
+function validateTransaction(t, i) {
+	return {
+		date: typeof t.date === 'string' ? t.date : '',
+		symbol: typeof t.symbol === 'string' ? t.symbol : '',
+		quantity: typeof t.quantity === 'number' && isFinite(t.quantity) ? t.quantity : 0,
+		activityType: ACTIVITY_TYPES.includes(t.activityType) ? t.activityType : 'BUY',
+		unitPrice: typeof t.unitPrice === 'number' && isFinite(t.unitPrice) ? t.unitPrice : 0,
+		currency: typeof t.currency === 'string' && t.currency.length <= 5 ? t.currency : 'USD',
+		fee: typeof t.fee === 'number' && isFinite(t.fee) ? t.fee : 0,
+		amount: typeof t.amount === 'number' && isFinite(t.amount) ? t.amount : 0,
+	};
 }
 
 function apiError(status, message) {

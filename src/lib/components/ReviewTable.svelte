@@ -1,5 +1,5 @@
 <script>
-	import { ACTIVITY_TYPES, CSV_COLUMNS } from '$lib/prompt.js';
+	import { ACTIVITY_TYPES } from '$lib/prompt.js';
 	import { generateCSV, downloadCSV } from '$lib/services/csv.js';
 
 	let { transactions = $bindable(), onstartover } = $props();

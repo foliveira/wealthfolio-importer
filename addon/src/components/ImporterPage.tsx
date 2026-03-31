@@ -30,6 +30,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     ctx.api.accounts.getAll().then((accs) => {
       setAccounts(accs);
       if (accs.length > 0) setSelectedAccount(accs[0].id);
+    }).catch((err) => {
+      setError(`Failed to load accounts: ${(err as Error).message}`);
     });
   }, []);
 

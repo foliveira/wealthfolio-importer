@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite';
+import { copyFileSync } from 'fs';
+import { resolve } from 'path';
 
 export default defineConfig({
   build: {
@@ -12,4 +14,14 @@ export default defineConfig({
     },
     outDir: 'dist',
   },
+  plugins: [
+    {
+      name: 'copy-pdf-worker',
+      closeBundle() {
+        const src = resolve('node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+        const dest = resolve('dist/pdf.worker.min.mjs');
+        copyFileSync(src, dest);
+      },
+    },
+  ],
 });

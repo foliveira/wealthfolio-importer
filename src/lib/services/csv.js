@@ -1,7 +1,11 @@
 import { CSV_COLUMNS } from '$lib/prompt.js';
 
 function escapeField(val) {
-	const str = String(val ?? '');
+	let str = String(val ?? '');
+	// Prevent CSV formula injection (OWASP)
+	if (/^[=+\-@\t\r]/.test(str)) {
+		str = "'" + str;
+	}
 	if (str.includes(',') || str.includes('"') || str.includes('\n')) {
 		return `"${str.replace(/"/g, '""')}"`;
 	}

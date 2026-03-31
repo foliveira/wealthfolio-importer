@@ -9,9 +9,12 @@ export default function enable(ctx: AddonContext) {
     route: '/ai-importer',
   });
 
+  // Stable component reference to avoid remounting on navigation
+  const Page = () => <ImporterPage ctx={ctx} />;
+
   ctx.router.add({
     path: '/ai-importer',
-    component: () => <ImporterPage ctx={ctx} />,
+    component: Page,
   });
 
   return {
