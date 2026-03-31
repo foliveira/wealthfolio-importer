@@ -1,24 +1,21 @@
 import * as pdfjsLib from 'pdfjs-dist';
+// Import worker source as raw string — Vite bundles it inline
+// @ts-ignore
+import pdfjsWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
 
 const MAX_PAGES = 20;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-// Disable web worker — addon loads via blob URL inside Tauri's webview,
-// so external worker scripts can't be loaded. PDF parsing runs on the
-// main thread instead, which is fine for documents up to 20 pages.
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'data:,'; // non-empty to suppress error
-}
+// Create a blob URL from the inlined worker source.
+// This works in any context (blob URLs, Tauri webview, etc.)
+// because the worker code is embedded in the bundle itself.
+const workerBlob = new Blob([pdfjsWorkerSrc], { type: 'application/javascript' });
+pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
 
 export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({
-    data: new Uint8Array(arrayBuffer),
-    disableAutoFetch: true,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-  }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   const pageCount = pdf.numPages;
 
   if (pageCount > MAX_PAGES) {
