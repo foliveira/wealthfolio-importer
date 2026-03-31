@@ -86,6 +86,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
     try {
       const activities: ActivityImport[] = transactions.map((t, i) => ({
+        accountId: selectedAccount,
         date: t.date,
         activityType: t.activityType,
         symbol: t.symbol,
@@ -95,20 +96,26 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         fee: t.fee,
         amount: t.amount,
         lineNumber: i + 1,
+        isValid: true,
+        isDraft: false,
       }));
 
       // Validate first
-      const checked = await ctx.api.activities.checkImport(selectedAccount, activities);
-      const errors = checked.filter((a) => a.error);
-      const duplicates = checked.filter((a) => a.isDuplicate);
+      const checked = await ctx.api.activities.checkImport(activities);
+      const hasErrors = checked.filter((a) => a.errors && Object.keys(a.errors).length > 0);
+      const duplicates = checked.filter((a) => a.duplicateOfId);
 
-      if (errors.length > 0) {
-        setError(`Validation errors:\n${errors.map((e) => `Line ${e.lineNumber}: ${e.error}`).join('\n')}`);
+      if (hasErrors.length > 0) {
+        const msgs = hasErrors.map((e) => {
+          const errs = Object.entries(e.errors || {}).map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`).join('; ');
+          return `Line ${e.lineNumber}: ${errs}`;
+        });
+        setError(`Validation errors:\n${msgs.join('\n')}`);
         setStep('review');
         return;
       }
 
-      const toImport = checked.filter((a) => !a.isDuplicate);
+      const toImport = checked.filter((a) => !a.duplicateOfId);
 
       if (toImport.length === 0) {
         setImportResult(`All ${duplicates.length} transaction(s) are duplicates — nothing to import.`);
@@ -116,11 +123,12 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         return;
       }
 
-      await ctx.api.activities.import(toImport);
+      const result = await ctx.api.activities.import(toImport);
 
+      const imported = result.summary?.imported ?? toImport.length;
       const msg = duplicates.length > 0
-        ? `Imported ${toImport.length} transaction(s). Skipped ${duplicates.length} duplicate(s).`
-        : `Successfully imported ${toImport.length} transaction(s).`;
+        ? `Imported ${imported} transaction(s). Skipped ${duplicates.length} duplicate(s).`
+        : `Successfully imported ${imported} transaction(s).`;
 
       setImportResult(msg);
       setStep('done');
