@@ -7,12 +7,15 @@ const JPEG_QUALITY = 0.85;
 // Disable web worker — addon loads via blob URL inside Tauri's webview,
 // so external worker scripts can't be loaded. PDF parsing runs on the
 // main thread instead, which is fine for documents up to 20 pages.
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'data:,'; // non-empty to suppress error
+}
 
 export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(arrayBuffer),
+    disableAutoFetch: true,
     useWorkerFetch: false,
     isEvalSupported: false,
   }).promise;
