@@ -4,10 +4,17 @@ const MAX_PAGES = 20;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-// Use local worker bundled alongside the addon
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(/* @vite-ignore */ './pdf.worker.min.mjs', import.meta.url).toString();
+function ensureWorker() {
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    // Addon JS loads via blob URL so import.meta.url-based paths won't work.
+    // Use the CDN-hosted worker matching our bundled pdfjs-dist version.
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  }
+}
 
 export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
+  ensureWorker();
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;

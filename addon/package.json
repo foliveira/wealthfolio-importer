@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite build --watch",
     "dev:server": "vite --port 3001",
-    "build": "tsc && vite build && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs dist/",
+    "build": "tsc && vite build",
     "clean": "rm -rf dist",
     "package": "zip -r ai-importer.zip manifest.json dist/ README.md",
     "bundle": "npm run clean && npm run build && npm run package"
