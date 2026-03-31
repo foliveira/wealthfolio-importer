@@ -85,6 +85,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setStep('importing');
 
     try {
+      ctx.api.logger.info(`[AI Importer] Starting import of ${transactions.length} transactions to account ${selectedAccount}`);
+
       const activities: ActivityImport[] = transactions.map((t, i) => ({
         accountId: selectedAccount,
         date: t.date,
@@ -100,40 +102,20 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         isDraft: false,
       }));
 
-      // Validate first
-      const checked = await ctx.api.activities.checkImport(activities);
-      const hasErrors = checked.filter((a) => a.errors && Object.keys(a.errors).length > 0);
-      const duplicates = checked.filter((a) => a.duplicateOfId);
+      ctx.api.logger.info(`[AI Importer] Activities payload: ${JSON.stringify(activities[0])}`);
+      ctx.api.logger.info(`[AI Importer] Calling activities.import()...`);
 
-      if (hasErrors.length > 0) {
-        const msgs = hasErrors.map((e) => {
-          const errs = Object.entries(e.errors || {}).map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`).join('; ');
-          return `Line ${e.lineNumber}: ${errs}`;
-        });
-        setError(`Validation errors:\n${msgs.join('\n')}`);
-        setStep('review');
-        return;
-      }
+      const result = await ctx.api.activities.import(activities);
 
-      const toImport = checked.filter((a) => !a.duplicateOfId);
+      ctx.api.logger.info(`[AI Importer] Import result: ${JSON.stringify(result?.summary)}`);
 
-      if (toImport.length === 0) {
-        setImportResult(`All ${duplicates.length} transaction(s) are duplicates — nothing to import.`);
-        setStep('done');
-        return;
-      }
-
-      const result = await ctx.api.activities.import(toImport);
-
-      const imported = result.summary?.imported ?? toImport.length;
-      const msg = duplicates.length > 0
-        ? `Imported ${imported} transaction(s). Skipped ${duplicates.length} duplicate(s).`
-        : `Successfully imported ${imported} transaction(s).`;
-
-      setImportResult(msg);
+      const imported = result?.summary?.imported ?? activities.length;
+      setImportResult(`Successfully imported ${imported} transaction(s).`);
       setStep('done');
     } catch (err) {
-      setError((err as Error).message);
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.api.logger.error(`[AI Importer] Import failed: ${message}`);
+      setError(`Import failed: ${message}`);
       setStep('review');
     }
   }
