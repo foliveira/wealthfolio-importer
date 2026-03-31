@@ -4,20 +4,18 @@ const MAX_PAGES = 20;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-function ensureWorker() {
-  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    // Addon JS loads via blob URL so import.meta.url-based paths won't work.
-    // Use the CDN-hosted worker matching our bundled pdfjs-dist version.
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  }
-}
+// Disable web worker — addon loads via blob URL inside Tauri's webview,
+// so external worker scripts can't be loaded. PDF parsing runs on the
+// main thread instead, which is fine for documents up to 20 pages.
+pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
 export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
-  ensureWorker();
-
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  }).promise;
   const pageCount = pdf.numPages;
 
   if (pageCount > MAX_PAGES) {
