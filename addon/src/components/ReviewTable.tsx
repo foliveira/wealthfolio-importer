@@ -1,3 +1,4 @@
+import React from 'react';
 import { ACTIVITY_TYPES, type ExtractedTransaction } from '../services/prompt';
 
 interface ReviewTableProps {

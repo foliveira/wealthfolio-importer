@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import externalGlobals from 'rollup-plugin-external-globals';
-import { copyFileSync } from 'fs';
-import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      jsxRuntime: 'classic',
+    }),
+  ],
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
@@ -16,16 +18,18 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['react', 'react-dom'],
+      external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       plugins: [
         externalGlobals({
-          react: 'React',
+          'react': 'React',
           'react-dom': 'ReactDOM',
+          'react/jsx-runtime': 'React',
+          'react/jsx-dev-runtime': 'React',
         }),
       ],
       output: {
         globals: {
-          react: 'React',
+          'react': 'React',
           'react-dom': 'ReactDOM',
         },
       },

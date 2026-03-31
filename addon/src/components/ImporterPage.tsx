@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { ExtractedTransaction } from '../services/prompt';

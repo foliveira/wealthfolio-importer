@@ -1,4 +1,4 @@
-import { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
+import React, { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
 
 const ACCEPTED = ['.pdf', '.png', '.jpg', '.jpeg'];
 const MAX_SIZE_MB = 20;
