@@ -28,6 +28,7 @@ export default defineConfig({
         }),
       ],
       output: {
+        inlineDynamicImports: true,
         globals: {
           'react': 'React',
           'react-dom': 'ReactDOM',
