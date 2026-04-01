@@ -100,6 +100,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         currency: t.currency,
         fee: t.fee,
         amount: t.amount,
+        quoteCcy: t.currency,
+        instrumentType: 'EQUITY',
         lineNumber: i + 1,
         isValid: true,
         isDraft: false,
