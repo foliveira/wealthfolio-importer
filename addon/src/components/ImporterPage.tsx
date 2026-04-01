@@ -90,7 +90,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setStep('importing');
 
     try {
-      const activities: ActivityImport[] = transactions.map((t, i) => ({
+      const draft: ActivityImport[] = transactions.map((t, i) => ({
         accountId: selectedAccount,
         date: t.date,
         activityType: t.activityType,
@@ -107,12 +107,25 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         isDraft: false,
       }));
 
-      console.log('[AI Importer] Payload sample:', JSON.stringify(activities[0]));
-      const result = await ctx.api.activities.import(activities);
-      console.log('[AI Importer] Full result:', JSON.stringify(result));
+      // Resolve symbols (populates exchangeMic, symbolName, asset lookups)
+      const checked = await ctx.api.activities.checkImport(draft);
+      const valid = checked.activities.filter((a) => a.isValid);
 
-      const imported = result?.summary?.imported ?? activities.length;
-      setImportResult(`Successfully imported ${imported} transaction(s).`);
+      if (valid.length === 0) {
+        const errors = checked.activities
+          .filter((a) => a.errors)
+          .map((a) => `Line ${a.lineNumber}: ${Object.values(a.errors!).flat().join(', ')}`)
+          .slice(0, 5);
+        throw new Error(`No valid transactions after symbol resolution.\n${errors.join('\n')}`);
+      }
+
+      const result = await ctx.api.activities.import(valid);
+      const imported = result?.summary?.imported ?? valid.length;
+      const skipped = transactions.length - valid.length;
+      setImportResult(
+        `Successfully imported ${imported} transaction(s).` +
+        (skipped > 0 ? ` ${skipped} skipped (unresolved symbols).` : '')
+      );
       setStep('done');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

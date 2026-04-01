@@ -46,11 +46,13 @@ export interface SecretsAPI {
 }
 
 interface ImportResult {
+  activities: ActivityImport[];
   summary: {
     total: number;
     imported: number;
     skipped: number;
     duplicates: number;
+    success: boolean;
   };
 }
 
@@ -60,7 +62,10 @@ export interface SidebarItemHandle {
 
 export interface HostAPI {
   accounts: { getAll(): Promise<Account[]> };
-  activities: { import(activities: ActivityImport[]): Promise<ImportResult> };
+  activities: {
+    checkImport(activities: ActivityImport[]): Promise<ImportResult>;
+    import(activities: ActivityImport[]): Promise<ImportResult>;
+  };
   secrets: SecretsAPI;
   logger: { info(msg: string): void; error(msg: string): void; debug(msg: string): void };
 }
