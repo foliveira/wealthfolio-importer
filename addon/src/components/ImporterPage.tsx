@@ -110,21 +110,34 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       }));
 
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
-      ctx.api.logger.debug(`[AI Importer] Sample activity: ${JSON.stringify(draft[0])}`);
 
-      // Try direct fetch first to capture any 422 error details
+      // Validate all activities have accountId before sending
+      const payload = JSON.stringify({ activities: draft });
+      const parsed = JSON.parse(payload) as { activities: Record<string, unknown>[] };
+      parsed.activities.forEach((a, i) => {
+        if (!a.accountId) {
+          ctx.api.logger.error(`[AI Importer] Activity ${i} missing accountId: ${JSON.stringify(a)}`);
+        }
+      });
+      ctx.api.logger.debug(`[AI Importer] Payload length: ${payload.length}`);
+      ctx.api.logger.debug(`[AI Importer] First activity: ${JSON.stringify(parsed.activities[0])}`);
+      ctx.api.logger.debug(`[AI Importer] Last activity: ${JSON.stringify(parsed.activities[parsed.activities.length - 1])}`);
+
+      // Direct fetch to capture 422 error details
       try {
         const resp = await fetch('/api/v1/activities/import/check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ activities: draft }),
+          body: payload,
         });
         if (!resp.ok) {
           const body = await resp.text();
           ctx.api.logger.error(`[AI Importer] Direct API response ${resp.status}: ${body}`);
+          throw new Error(`API returned ${resp.status}: ${body}`);
         }
       } catch (e) {
+        if (e instanceof Error && e.message.startsWith('API returned')) throw e;
         ctx.api.logger.debug(`[AI Importer] Direct fetch probe failed: ${e}`);
       }
 
