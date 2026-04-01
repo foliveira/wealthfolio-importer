@@ -91,6 +91,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
     try {
       const draft: ActivityImport[] = transactions.map((t, i) => ({
+        id: undefined,
         accountId: selectedAccount,
         date: t.date || new Date().toISOString(),
         activityType: t.activityType,
@@ -105,6 +106,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         lineNumber: i + 1,
         isValid: true,
         isDraft: false,
+        forceImport: false,
       }));
 
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);

@@ -36,6 +36,7 @@ export interface ActivityImport {
   isValid: boolean;
   lineNumber?: number;
   isDraft: boolean;
+  forceImport?: boolean;
   comment?: string;
 }
 
