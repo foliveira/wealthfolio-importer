@@ -107,7 +107,9 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         isDraft: false,
       }));
 
+      console.log('[AI Importer] Payload sample:', JSON.stringify(activities[0]));
       const result = await ctx.api.activities.import(activities);
+      console.log('[AI Importer] Full result:', JSON.stringify(result));
 
       const imported = result?.summary?.imported ?? activities.length;
       setImportResult(`Successfully imported ${imported} transaction(s).`);
