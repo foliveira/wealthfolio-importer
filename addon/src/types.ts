@@ -1,5 +1,5 @@
 // Type declarations for Wealthfolio addon SDK
-// Based on @wealthfolio/addon-sdk source at github.com/afadil/wealthfolio
+// Derived from @wealthfolio/addon-sdk at github.com/afadil/wealthfolio (v3.0.0)
 
 import React from 'react';
 
@@ -39,9 +39,13 @@ export interface ActivityImport {
   comment?: string;
 }
 
-export interface ImportActivitiesResult {
-  activities: ActivityImport[];
-  importRunId: string;
+export interface SecretsAPI {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+interface ImportResult {
   summary: {
     total: number;
     imported: number;
@@ -50,45 +54,24 @@ export interface ImportActivitiesResult {
   };
 }
 
-export interface SecretsAPI {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-export interface AccountsAPI {
-  getAll(): Promise<Account[]>;
-}
-
-export interface ActivitiesAPI {
-  import(activities: ActivityImport[]): Promise<ImportActivitiesResult>;
-  checkImport(activities: ActivityImport[]): Promise<ActivityImport[]>;
-}
-
 export interface SidebarItemHandle {
   remove(): void;
 }
 
-export interface SidebarAPI {
-  addItem(config: { id: string; icon: React.ReactNode; label: string; route: string; order?: number }): SidebarItemHandle;
-}
-
-export interface RouterAPI {
-  add(config: { path: string; component: React.LazyExoticComponent<React.ComponentType<unknown>> }): void;
-}
-
 export interface HostAPI {
-  accounts: AccountsAPI;
-  activities: ActivitiesAPI;
+  accounts: { getAll(): Promise<Account[]> };
+  activities: { import(activities: ActivityImport[]): Promise<ImportResult> };
   secrets: SecretsAPI;
-  query: { getClient(): unknown };
   logger: { info(msg: string): void; error(msg: string): void; debug(msg: string): void };
-  navigation: { navigate(path: string): void };
 }
 
 export interface AddonContext {
-  sidebar: SidebarAPI;
-  router: RouterAPI;
+  sidebar: {
+    addItem(config: { id: string; icon: React.ReactNode; label: string; route: string; order?: number }): SidebarItemHandle;
+  };
+  router: {
+    add(config: { path: string; component: React.LazyExoticComponent<React.ComponentType<unknown>> }): void;
+  };
   onDisable: (callback: () => void) => void;
   api: HostAPI;
 }

@@ -1,21 +1,12 @@
 {
   "name": "wealthfolio-importer",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.55.0",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "svelte": "^5.55.1",
-    "vite": "^8.0.3"
-  },
-  "dependencies": {
-    "pdfjs-dist": "^5.6.205"
+    "dev": "npm run dev --prefix addon",
+    "dev:server": "npm run dev:server --prefix addon",
+    "build": "npm run build --prefix addon",
+    "bundle": "npm run bundle --prefix addon"
   }
 }

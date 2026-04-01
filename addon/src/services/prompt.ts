@@ -48,21 +48,21 @@ Rules:
 export const USER_PROMPT = 'Extract all investment transactions from this document.';
 
 export const TRANSACTION_SCHEMA = {
-  type: 'object' as const,
+  type: 'object',
   properties: {
     transactions: {
-      type: 'array' as const,
+      type: 'array',
       items: {
-        type: 'object' as const,
+        type: 'object',
         properties: {
-          date: { type: 'string' as const },
-          symbol: { type: 'string' as const },
-          quantity: { type: 'number' as const },
-          activityType: { type: 'string' as const, enum: [...ACTIVITY_TYPES] },
-          unitPrice: { type: 'number' as const },
-          currency: { type: 'string' as const },
-          fee: { type: 'number' as const },
-          amount: { type: 'number' as const },
+          date: { type: 'string' },
+          symbol: { type: 'string' },
+          quantity: { type: 'number' },
+          activityType: { type: 'string', enum: [...ACTIVITY_TYPES] },
+          unitPrice: { type: 'number' },
+          currency: { type: 'string' },
+          fee: { type: 'number' },
+          amount: { type: 'number' },
         },
         required: ['date', 'symbol', 'quantity', 'activityType', 'unitPrice', 'currency', 'fee', 'amount'],
         additionalProperties: false,
@@ -71,4 +71,4 @@ export const TRANSACTION_SCHEMA = {
   },
   required: ['transactions'],
   additionalProperties: false,
-};
+} as const;

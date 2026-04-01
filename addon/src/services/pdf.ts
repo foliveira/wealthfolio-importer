@@ -1,21 +1,19 @@
 import * as pdfjsLib from 'pdfjs-dist';
-// Import worker source as raw string — Vite bundles it inline
-// @ts-ignore
+// @ts-expect-error -- Vite ?raw import has no type declaration
 import pdfjsWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
 
 const MAX_PAGES = 20;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-// Create a blob URL from the inlined worker source.
-// This works in any context (blob URLs, Tauri webview, etc.)
-// because the worker code is embedded in the bundle itself.
+// Blob URL from inlined worker source — must remain alive for the app lifetime
+// so pdf.js can spawn workers on demand. Intentionally never revoked.
 const workerBlob = new Blob([pdfjsWorkerSrc], { type: 'application/javascript' });
 pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
 
-export async function pdfToImages(file: File): Promise<{ images: string[]; pageCount: number }> {
+export async function pdfToImages(file: File): Promise<{ images: string[] }> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const pageCount = pdf.numPages;
 
   if (pageCount > MAX_PAGES) {
@@ -35,26 +33,36 @@ export async function pdfToImages(file: File): Promise<{ images: string[]; pageC
     canvas.width = viewport.width;
     canvas.height = viewport.height;
 
-    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     images.push(canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1]);
     page.cleanup();
   }
 
+  // Release canvas pixel buffer
+  canvas.width = 0;
+  canvas.height = 0;
+
   pdf.destroy();
-  return { images, pageCount };
+  return { images };
 }
 
 export function imageToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Unexpected reader result type.'));
+        return;
+      }
+      resolve(reader.result.split(',')[1]);
+    };
     reader.onerror = () => reject(new Error('Failed to read image file.'));
     reader.readAsDataURL(file);
   });
 }
 
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png']);
+
 export function getMediaType(file: File): string {
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  const types: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
-  return (ext && types[ext]) || file.type || 'image/jpeg';
+  return ALLOWED_IMAGE_TYPES.has(file.type) ? file.type : 'image/jpeg';
 }

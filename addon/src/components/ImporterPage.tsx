@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { ExtractedTransaction } from '../services/prompt';
 import { extractTransactions } from '../services/ai';
-import { pdfToImages, imageToBase64, getMediaType } from '../services/pdf';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
 
 type Step = 'upload' | 'extracting' | 'review' | 'importing' | 'done';
+
+const SPIN_STYLE = <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>;
 
 interface ImporterPageProps {
   ctx: AddonContext;
@@ -24,14 +25,16 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [importResult, setImportResult] = useState('');
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load accounts once
   useEffect(() => {
     ctx.api.accounts.getAll().then((accs) => {
       setAccounts(accs);
       if (accs.length > 0) setSelectedAccount(accs[0].id);
-    }).catch((err) => {
-      setError(`Failed to load accounts: ${(err as Error).message}`);
+    }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Failed to load accounts: ${message}`);
     });
   }, []);
 
@@ -50,28 +53,30 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       let images: { base64: string; mediaType: string }[] = [];
 
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const { pdfToImages } = await import('../services/pdf');
         const result = await pdfToImages(file);
         images = result.images.map((base64) => ({ base64, mediaType: 'image/jpeg' }));
       } else {
+        const { imageToBase64, getMediaType } = await import('../services/pdf');
         const base64 = await imageToBase64(file);
         images = [{ base64, mediaType: getMediaType(file) }];
       }
 
       const abort = new AbortController();
-      setAbortController(abort);
+      abortRef.current = abort;
 
       const extracted = await extractTransactions(provider, apiKey, images, abort.signal);
       setTransactions(extracted);
       setStep('review');
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
         setStep('upload');
         return;
       }
-      setError((err as Error).message);
+      setError(err instanceof Error ? err.message : String(err));
       setStep('upload');
     } finally {
-      setAbortController(null);
+      abortRef.current = null;
     }
   }
 
@@ -85,8 +90,6 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setStep('importing');
 
     try {
-      ctx.api.logger.info(`[AI Importer] Starting import of ${transactions.length} transactions to account ${selectedAccount}`);
-
       const activities: ActivityImport[] = transactions.map((t, i) => ({
         accountId: selectedAccount,
         date: t.date,
@@ -102,12 +105,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         isDraft: false,
       }));
 
-      ctx.api.logger.info(`[AI Importer] Activities payload: ${JSON.stringify(activities[0])}`);
-      ctx.api.logger.info(`[AI Importer] Calling activities.import()...`);
-
       const result = await ctx.api.activities.import(activities);
-
-      ctx.api.logger.info(`[AI Importer] Import result: ${JSON.stringify(result?.summary)}`);
 
       const imported = result?.summary?.imported ?? activities.length;
       setImportResult(`Successfully imported ${imported} transaction(s).`);
@@ -139,6 +137,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
         <Settings
           secrets={ctx.api.secrets}
+          logger={ctx.api.logger}
           provider={provider}
           onProviderChange={setProvider}
           apiKey={apiKey}
@@ -159,7 +158,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
           <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <p style={{ marginTop: '12px' }}>Extracting transactions from <strong>{fileName}</strong>...</p>
           <button
-            onClick={() => abortController?.abort()}
+            onClick={() => abortRef.current?.abort()}
             style={{ marginTop: '8px', padding: '6px 16px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', cursor: 'pointer', fontSize: '13px' }}
           >
             Cancel
@@ -231,7 +230,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         </div>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {SPIN_STYLE}
     </div>
   );
 }

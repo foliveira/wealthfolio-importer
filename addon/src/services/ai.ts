@@ -7,6 +7,24 @@ interface ImageInput {
   mediaType: string;
 }
 
+type AnthropicContentBlock =
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'text'; text: string };
+
+type OpenAIContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail: 'high' } };
+
+interface AnthropicResponse {
+  content?: Array<{ text?: string }>;
+  error?: { message?: string };
+}
+
+interface OpenAIResponse {
+  choices?: Array<{ message?: { content?: string } }>;
+  error?: { message?: string };
+}
+
 export async function extractTransactions(
   provider: Provider,
   apiKey: string,
@@ -24,7 +42,7 @@ async function extractWithAnthropic(
   images: ImageInput[],
   signal?: AbortSignal,
 ): Promise<ExtractedTransaction[]> {
-  const content: unknown[] = [];
+  const content: AnthropicContentBlock[] = [];
   for (const img of images) {
     content.push({
       type: 'image',
@@ -51,12 +69,12 @@ async function extractWithAnthropic(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw apiError(res.status, (body as { error?: { message?: string } }).error?.message || res.statusText);
+    const body: AnthropicResponse = await res.json().catch(() => ({}));
+    throw apiError(res.status, body.error?.message || res.statusText);
   }
 
-  const data = await res.json();
-  const text = (data as { content?: { text?: string }[] }).content?.[0]?.text;
+  const data: AnthropicResponse = await res.json();
+  const text = data.content?.[0]?.text;
   return parseResponse(text);
 }
 
@@ -65,7 +83,7 @@ async function extractWithOpenAI(
   images: ImageInput[],
   signal?: AbortSignal,
 ): Promise<ExtractedTransaction[]> {
-  const content: unknown[] = [{ type: 'text', text: USER_PROMPT }];
+  const content: OpenAIContentBlock[] = [{ type: 'text', text: USER_PROMPT }];
   for (const img of images) {
     content.push({
       type: 'image_url',
@@ -95,12 +113,12 @@ async function extractWithOpenAI(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw apiError(res.status, (body as { error?: { message?: string } }).error?.message || res.statusText);
+    const body: OpenAIResponse = await res.json().catch(() => ({}));
+    throw apiError(res.status, body.error?.message || res.statusText);
   }
 
-  const data = await res.json();
-  const text = (data as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content;
+  const data: OpenAIResponse = await res.json();
+  const text = data.choices?.[0]?.message?.content;
   return parseResponse(text);
 }
 
@@ -115,33 +133,36 @@ function parseResponse(text: string | undefined | null): ExtractedTransaction[] 
     try {
       parsed = JSON.parse(stripped);
     } catch {
-      throw new Error(`Could not parse AI response.\n\n${text.slice(0, 1000)}`);
+      throw new Error('Could not parse AI response as JSON. Please try again with a clearer document.');
     }
   }
 
   const transactions = Array.isArray(parsed)
     ? parsed
-    : (parsed as { transactions?: unknown[] }).transactions;
+    : typeof parsed === 'object' && parsed !== null && 'transactions' in parsed
+      ? (parsed as Record<string, unknown>).transactions
+      : undefined;
 
   if (!Array.isArray(transactions)) {
-    throw new Error(`Unexpected response structure.\n\n${JSON.stringify(parsed).slice(0, 1000)}`);
+    throw new Error('Unexpected response structure. Expected a "transactions" array.');
   }
 
   return transactions.map(validateTransaction);
 }
 
-function validateTransaction(t: Record<string, unknown>): ExtractedTransaction {
+function validateTransaction(t: unknown): ExtractedTransaction {
+  const obj = (typeof t === 'object' && t !== null ? t : {}) as Record<string, unknown>;
   return {
-    date: typeof t.date === 'string' ? t.date : '',
-    symbol: typeof t.symbol === 'string' ? t.symbol : '',
-    quantity: typeof t.quantity === 'number' && isFinite(t.quantity) ? t.quantity : 0,
-    activityType: (ACTIVITY_TYPES as readonly string[]).includes(t.activityType as string)
-      ? (t.activityType as ExtractedTransaction['activityType'])
+    date: typeof obj.date === 'string' ? obj.date : '',
+    symbol: typeof obj.symbol === 'string' ? obj.symbol : '',
+    quantity: typeof obj.quantity === 'number' && isFinite(obj.quantity) ? Math.max(0, obj.quantity) : 0,
+    activityType: (ACTIVITY_TYPES as readonly string[]).includes(obj.activityType as string)
+      ? (obj.activityType as ExtractedTransaction['activityType'])
       : 'BUY',
-    unitPrice: typeof t.unitPrice === 'number' && isFinite(t.unitPrice) ? t.unitPrice : 0,
-    currency: typeof t.currency === 'string' && t.currency.length <= 5 ? t.currency : 'USD',
-    fee: typeof t.fee === 'number' && isFinite(t.fee) ? t.fee : 0,
-    amount: typeof t.amount === 'number' && isFinite(t.amount) ? t.amount : 0,
+    unitPrice: typeof obj.unitPrice === 'number' && isFinite(obj.unitPrice) ? Math.max(0, obj.unitPrice) : 0,
+    currency: typeof obj.currency === 'string' && obj.currency.length <= 5 ? obj.currency : 'USD',
+    fee: typeof obj.fee === 'number' && isFinite(obj.fee) ? Math.max(0, obj.fee) : 0,
+    amount: typeof obj.amount === 'number' && isFinite(obj.amount) ? obj.amount : 0,
   };
 }
 

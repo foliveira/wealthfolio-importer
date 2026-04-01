@@ -1,31 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { SecretsAPI } from '../types';
+import type { SecretsAPI, HostAPI } from '../types';
 import type { Provider } from '../services/ai';
 
 interface SettingsProps {
   secrets: SecretsAPI;
+  logger: HostAPI['logger'];
   provider: Provider;
   onProviderChange: (p: Provider) => void;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
 }
 
-export function Settings({ secrets, provider, onProviderChange, apiKey, onApiKeyChange }: SettingsProps) {
+export function Settings({ secrets, logger, provider, onProviderChange, apiKey, onApiKeyChange }: SettingsProps) {
   const [showKey, setShowKey] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load saved settings once
   useEffect(() => {
     secrets.get('provider').then((p) => {
       if (p === 'openai' || p === 'anthropic') onProviderChange(p);
-    }).catch(() => {});
+    }).catch((e) => logger.error(`[AI Importer] Failed to load provider setting: ${e}`));
     secrets.get('api-key').then((k) => {
       if (k) onApiKeyChange(k);
-    }).catch(() => {});
+    }).catch((e) => logger.error(`[AI Importer] Failed to load API key: ${e}`));
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimeout(saveTimer.current);
   }, []);
 
   const handleProviderChange = (p: Provider) => {
     onProviderChange(p);
-    secrets.set('provider', p).catch(() => {});
+    secrets.set('provider', p).catch((e) => logger.error(`[AI Importer] Failed to save provider: ${e}`));
   };
 
   const handleKeyChange = (key: string) => {
@@ -34,9 +40,9 @@ export function Settings({ secrets, provider, onProviderChange, apiKey, onApiKey
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       if (key) {
-        secrets.set('api-key', key).catch(() => {});
+        secrets.set('api-key', key).catch((e) => logger.error(`[AI Importer] Failed to save API key: ${e}`));
       } else {
-        secrets.delete('api-key').catch(() => {});
+        secrets.delete('api-key').catch((e) => logger.error(`[AI Importer] Failed to delete API key: ${e}`));
       }
     }, 500);
   };

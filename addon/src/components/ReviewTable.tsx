@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useCallback, useRef } from 'react';
 import { ACTIVITY_TYPES, type ExtractedTransaction } from '../services/prompt';
 
 interface ReviewTableProps {
@@ -6,22 +6,97 @@ interface ReviewTableProps {
   onChange: (transactions: ExtractedTransaction[]) => void;
 }
 
+const cellStyle: React.CSSProperties = {
+  padding: '4px',
+  borderBottom: '1px solid var(--border)',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '4px 8px',
+  borderRadius: '4px',
+  border: '1px solid var(--border)',
+  background: 'var(--background)',
+  color: 'var(--foreground)',
+  fontSize: '12px',
+  boxSizing: 'border-box',
+};
+
+interface RowProps {
+  row: ExtractedTransaction;
+  index: number;
+  onUpdate: (index: number, field: keyof ExtractedTransaction, value: string | number) => void;
+  onDelete: (index: number) => void;
+}
+
+const TransactionRow = memo(function TransactionRow({ row, index, onUpdate, onDelete }: RowProps) {
+  return (
+    <tr>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '160px' }} maxLength={30} value={row.date} onChange={(e) => onUpdate(index, 'date', e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '80px' }} maxLength={20} value={row.symbol} onChange={(e) => onUpdate(index, 'symbol', e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '70px' }} type="number" step="any" value={row.quantity} onChange={(e) => onUpdate(index, 'quantity', +e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <select
+          style={{ ...inputStyle, minWidth: '100px' }}
+          value={row.activityType}
+          onChange={(e) => onUpdate(index, 'activityType', e.target.value)}
+        >
+          {ACTIVITY_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.unitPrice} onChange={(e) => onUpdate(index, 'unitPrice', +e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '50px' }} maxLength={5} value={row.currency} onChange={(e) => onUpdate(index, 'currency', e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '60px' }} type="number" step="any" value={row.fee} onChange={(e) => onUpdate(index, 'fee', +e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.amount} onChange={(e) => onUpdate(index, 'amount', +e.target.value)} />
+      </td>
+      <td style={cellStyle}>
+        <button
+          onClick={() => onDelete(index)}
+          title="Delete row"
+          aria-label="Delete row"
+          style={{ background: 'none', border: 'none', color: 'hsl(0 84% 60%)', cursor: 'pointer', fontSize: '16px', padding: '2px 6px' }}
+        >
+          ×
+        </button>
+      </td>
+    </tr>
+  );
+});
+
 export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
-  function updateRow(index: number, field: keyof ExtractedTransaction, value: string | number) {
-    const updated = [...transactions];
+  const txRef = useRef(transactions);
+  txRef.current = transactions;
+
+  const updateRow = useCallback((index: number, field: keyof ExtractedTransaction, value: string | number) => {
+    const updated = [...txRef.current];
     updated[index] = { ...updated[index], [field]: value };
     onChange(updated);
-  }
+  }, [onChange]);
 
-  function deleteRow(index: number) {
-    onChange(transactions.filter((_, i) => i !== index));
-  }
+  const deleteRow = useCallback((index: number) => {
+    onChange(txRef.current.filter((_, i) => i !== index));
+  }, [onChange]);
 
   function addRow() {
     onChange([
       ...transactions,
       {
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0] + 'T00:00:00.000Z',
         symbol: '',
         quantity: 0,
         activityType: 'BUY',
@@ -32,22 +107,6 @@ export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
       },
     ]);
   }
-
-  const cellStyle: React.CSSProperties = {
-    padding: '4px',
-    borderBottom: '1px solid var(--border)',
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    border: '1px solid var(--border)',
-    background: 'var(--background)',
-    color: 'var(--foreground)',
-    fontSize: '12px',
-    boxSizing: 'border-box',
-  };
 
   return (
     <div>
@@ -72,58 +131,16 @@ export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr>
-                {['Date', 'Symbol', 'Qty', 'Type', 'Price', 'CCY', 'Fee', 'Amount', ''].map((h) => (
+                {['Date', 'Symbol', 'Qty', 'Type', 'Price', 'CCY', 'Fee', 'Amount', 'Actions'].map((h) => (
                   <th key={h} style={{ ...cellStyle, textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' }}>
-                    {h}
+                    {h === 'Actions' ? '' : h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {transactions.map((row, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '160px' }} value={row.date} onChange={(e) => updateRow(i, 'date', e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '80px' }} value={row.symbol} onChange={(e) => updateRow(i, 'symbol', e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '70px' }} type="number" step="any" value={row.quantity} onChange={(e) => updateRow(i, 'quantity', +e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <select
-                      style={{ ...inputStyle, minWidth: '100px' }}
-                      value={row.activityType}
-                      onChange={(e) => updateRow(i, 'activityType', e.target.value)}
-                    >
-                      {ACTIVITY_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.unitPrice} onChange={(e) => updateRow(i, 'unitPrice', +e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '50px' }} value={row.currency} onChange={(e) => updateRow(i, 'currency', e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '60px' }} type="number" step="any" value={row.fee} onChange={(e) => updateRow(i, 'fee', +e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.amount} onChange={(e) => updateRow(i, 'amount', +e.target.value)} />
-                  </td>
-                  <td style={cellStyle}>
-                    <button
-                      onClick={() => deleteRow(i)}
-                      title="Delete row"
-                      style={{ background: 'none', border: 'none', color: 'hsl(0 84% 60%)', cursor: 'pointer', fontSize: '16px', padding: '2px 6px' }}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
+                <TransactionRow key={`${row.date}-${row.symbol}-${i}`} row={row} index={i} onUpdate={updateRow} onDelete={deleteRow} />
               ))}
             </tbody>
           </table>
