@@ -91,7 +91,6 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
     try {
       const draft: ActivityImport[] = transactions.map((t, i) => ({
-        id: undefined,
         accountId: selectedAccount,
         date: t.date || new Date().toISOString(),
         activityType: t.activityType,
@@ -111,49 +110,43 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
 
-      // Validate all activities have accountId before sending
-      const payload = JSON.stringify({ activities: draft });
-      const parsed = JSON.parse(payload) as { activities: Record<string, unknown>[] };
-      parsed.activities.forEach((a, i) => {
-        if (!a.accountId) {
-          ctx.api.logger.error(`[AI Importer] Activity ${i} missing accountId: ${JSON.stringify(a)}`);
-        }
-      });
-      ctx.api.logger.debug(`[AI Importer] Payload length: ${payload.length}`);
-      ctx.api.logger.debug(`[AI Importer] First activity: ${JSON.stringify(parsed.activities[0])}`);
-      ctx.api.logger.debug(`[AI Importer] Last activity: ${JSON.stringify(parsed.activities[parsed.activities.length - 1])}`);
-
-      // Direct fetch to capture 422 error details
-      try {
-        const resp = await fetch('/api/v1/activities/import/check', {
+      // Call API directly — the SDK bridge doesn't pass accountId at root level
+      // which the self-hosted Axum backend requires
+      async function apiCall<T>(path: string, body: unknown): Promise<T> {
+        const resp = await fetch(path, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: payload,
+          body: JSON.stringify(body),
         });
         if (!resp.ok) {
-          const body = await resp.text();
-          ctx.api.logger.error(`[AI Importer] Direct API response ${resp.status}: ${body}`);
-          throw new Error(`API returned ${resp.status}: ${body}`);
+          const text = await resp.text();
+          throw new Error(`API ${resp.status}: ${text}`);
         }
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith('API returned')) throw e;
-        ctx.api.logger.debug(`[AI Importer] Direct fetch probe failed: ${e}`);
+        return resp.json();
       }
 
+      const requestBody = { accountId: selectedAccount, activities: draft };
+
       // Resolve symbols (populates exchangeMic, symbolName, asset lookups)
-      const checked = await ctx.api.activities.checkImport(draft);
-      const valid = checked.activities.filter((a) => a.isValid);
+      const checked = await apiCall<ActivityImport[]>(
+        '/api/v1/activities/import/check',
+        requestBody,
+      );
+      const valid = checked.filter((a) => a.isValid);
 
       if (valid.length === 0) {
-        const errors = checked.activities
+        const errors = checked
           .filter((a) => a.errors)
           .map((a) => `Line ${a.lineNumber}: ${Object.values(a.errors!).flat().join(', ')}`)
           .slice(0, 5);
         throw new Error(`No valid transactions after symbol resolution.\n${errors.join('\n')}`);
       }
 
-      const result = await ctx.api.activities.import(valid);
+      const result = await apiCall<{ activities: ActivityImport[]; summary?: { imported?: number } }>(
+        '/api/v1/activities/import',
+        { accountId: selectedAccount, activities: valid },
+      );
       const imported = result?.summary?.imported ?? valid.length;
       const skipped = transactions.length - valid.length;
       setImportResult(
