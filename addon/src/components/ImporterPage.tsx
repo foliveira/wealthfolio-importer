@@ -92,20 +92,23 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     try {
       const draft: ActivityImport[] = transactions.map((t, i) => ({
         accountId: selectedAccount,
-        date: t.date,
+        date: t.date || new Date().toISOString(),
         activityType: t.activityType,
-        symbol: t.symbol,
-        quantity: t.quantity,
-        unitPrice: t.unitPrice,
-        currency: t.currency,
-        fee: t.fee,
-        amount: t.amount,
-        quoteCcy: t.currency,
-        instrumentType: 'EQUITY',
+        symbol: t.symbol || '',
+        quantity: Number(t.quantity) || 0,
+        unitPrice: Number(t.unitPrice) || 0,
+        currency: t.currency || 'USD',
+        fee: Number(t.fee) || 0,
+        amount: Number(t.amount) || 0,
+        quoteCcy: t.currency || 'USD',
+        instrumentType: 'Equity',
         lineNumber: i + 1,
         isValid: true,
         isDraft: false,
       }));
+
+      ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
+      ctx.api.logger.debug(`[AI Importer] Sample activity: ${JSON.stringify(draft[0])}`);
 
       // Resolve symbols (populates exchangeMic, symbolName, asset lookups)
       const checked = await ctx.api.activities.checkImport(draft);
@@ -129,7 +132,9 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       setStep('done');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const detail = typeof err === 'object' && err !== null ? JSON.stringify(err) : '';
       ctx.api.logger.error(`[AI Importer] Import failed: ${message}`);
+      if (detail && detail !== '{}') ctx.api.logger.error(`[AI Importer] Error detail: ${detail}`);
       setError(`Import failed: ${message}`);
       setStep('review');
     }
