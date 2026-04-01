@@ -112,6 +112,22 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
       ctx.api.logger.debug(`[AI Importer] Sample activity: ${JSON.stringify(draft[0])}`);
 
+      // Try direct fetch first to capture any 422 error details
+      try {
+        const resp = await fetch('/api/v1/activities/import/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ activities: draft }),
+        });
+        if (!resp.ok) {
+          const body = await resp.text();
+          ctx.api.logger.error(`[AI Importer] Direct API response ${resp.status}: ${body}`);
+        }
+      } catch (e) {
+        ctx.api.logger.debug(`[AI Importer] Direct fetch probe failed: ${e}`);
+      }
+
       // Resolve symbols (populates exchangeMic, symbolName, asset lookups)
       const checked = await ctx.api.activities.checkImport(draft);
       const valid = checked.activities.filter((a) => a.isValid);
