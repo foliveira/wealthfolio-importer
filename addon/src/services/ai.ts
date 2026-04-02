@@ -21,7 +21,7 @@ interface AnthropicResponse {
 }
 
 interface OpenAIResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{ message?: { content?: string | null; refusal?: string | null } }>;
   error?: { message?: string };
 }
 
@@ -118,12 +118,15 @@ async function extractWithOpenAI(
   }
 
   const data: OpenAIResponse = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  return parseResponse(text);
+  const msg = data.choices?.[0]?.message;
+  if (msg?.refusal) {
+    throw new Error(`AI refused to process the document: ${msg.refusal}`);
+  }
+  return parseResponse(msg?.content);
 }
 
 function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
-  if (!text) throw new Error('Empty response from AI provider.');
+  if (!text) throw new Error('Empty response from AI provider. The document may be unreadable — try a clearer scan or image.');
 
   let parsed: unknown;
   try {
