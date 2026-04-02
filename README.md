@@ -54,3 +54,7 @@ npm run dev:server    # hot-reload on port 3001
 ```
 
 Enable addon dev mode in Wealthfolio with `VITE_ENABLE_ADDON_DEV_MODE=true`.
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
