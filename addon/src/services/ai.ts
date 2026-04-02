@@ -150,17 +150,30 @@ function parseResponse(text: string | undefined | null): ExtractedTransaction[] 
   return transactions.map(validateTransaction);
 }
 
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?)?$/;
+export const SYMBOL_RE = /^[\w.$\-/]{0,20}$/;
+
+function sanitizeDate(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return ISO_DATE_RE.test(value) ? value : '';
+}
+
+function sanitizeSymbol(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return SYMBOL_RE.test(value) ? value : '';
+}
+
 function validateTransaction(t: unknown): ExtractedTransaction {
   const obj = (typeof t === 'object' && t !== null ? t : {}) as Record<string, unknown>;
   return {
-    date: typeof obj.date === 'string' ? obj.date : '',
-    symbol: typeof obj.symbol === 'string' ? obj.symbol : '',
+    date: sanitizeDate(obj.date),
+    symbol: sanitizeSymbol(obj.symbol),
     quantity: typeof obj.quantity === 'number' && isFinite(obj.quantity) ? Math.max(0, obj.quantity) : 0,
     activityType: (ACTIVITY_TYPES as readonly string[]).includes(obj.activityType as string)
       ? (obj.activityType as ExtractedTransaction['activityType'])
       : 'BUY',
     unitPrice: typeof obj.unitPrice === 'number' && isFinite(obj.unitPrice) ? Math.max(0, obj.unitPrice) : 0,
-    currency: typeof obj.currency === 'string' && obj.currency.length <= 5 ? obj.currency : 'USD',
+    currency: typeof obj.currency === 'string' && /^[A-Z]{3,5}$/.test(obj.currency) ? obj.currency : 'USD',
     fee: typeof obj.fee === 'number' && isFinite(obj.fee) ? Math.max(0, obj.fee) : 0,
     amount: typeof obj.amount === 'number' && isFinite(obj.amount) ? obj.amount : 0,
   };

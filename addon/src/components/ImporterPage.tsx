@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { ExtractedTransaction } from '../services/prompt';
-import { extractTransactions } from '../services/ai';
+import { extractTransactions, ISO_DATE_RE, SYMBOL_RE } from '../services/ai';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
@@ -90,23 +90,28 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setStep('importing');
 
     try {
-      const draft: ActivityImport[] = transactions.map((t, i) => ({
-        accountId: selectedAccount,
-        date: t.date || new Date().toISOString(),
-        activityType: t.activityType,
-        symbol: t.symbol || '',
-        quantity: Number(t.quantity) || 0,
-        unitPrice: Number(t.unitPrice) || 0,
-        currency: t.currency || 'USD',
-        fee: Number(t.fee) || 0,
-        amount: Number(t.amount) || 0,
-        quoteCcy: t.currency || 'USD',
-        instrumentType: 'Equity',
-        lineNumber: i + 1,
-        isValid: true,
-        isDraft: false,
-        forceImport: false,
-      }));
+      const draft: ActivityImport[] = transactions.map((t, i) => {
+        const date = ISO_DATE_RE.test(t.date) ? t.date : new Date().toISOString();
+        const symbol = SYMBOL_RE.test(t.symbol) ? t.symbol : '';
+        const currency = /^[A-Z]{3,5}$/.test(t.currency) ? t.currency : 'USD';
+        return {
+          accountId: selectedAccount,
+          date,
+          activityType: t.activityType,
+          symbol,
+          quantity: Math.max(0, Number(t.quantity) || 0),
+          unitPrice: Math.max(0, Number(t.unitPrice) || 0),
+          currency,
+          fee: Math.max(0, Number(t.fee) || 0),
+          amount: Number(t.amount) || 0,
+          quoteCcy: currency,
+          instrumentType: 'Equity',
+          lineNumber: i + 1,
+          isValid: true,
+          isDraft: false,
+          forceImport: false,
+        };
+      });
 
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
 
@@ -159,7 +164,9 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const detail = typeof err === 'object' && err !== null ? JSON.stringify(err) : '';
       ctx.api.logger.error(`[AI Importer] Import failed: ${message}`);
       if (detail && detail !== '{}') ctx.api.logger.error(`[AI Importer] Error detail: ${detail}`);
-      setError(`Import failed: ${message}`);
+      // Show a sanitized message to the user — full details stay in the logger
+      const userMessage = message.length > 200 ? message.slice(0, 200) + '…' : message;
+      setError(`Import failed: ${userMessage}`);
       setStep('review');
     }
   }
