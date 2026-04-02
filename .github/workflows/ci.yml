@@ -26,12 +26,11 @@ jobs:
         working-directory: addon
         run: npm run build
 
-      - name: Create release ZIP
-        working-directory: addon
-        run: zip -r ai-importer.zip manifest.json dist/ README.md
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-importer
-          path: addon/ai-importer.zip
+          path: |
+            addon/manifest.json
+            addon/dist/
+            addon/README.md
