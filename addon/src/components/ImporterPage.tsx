@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { ExtractedTransaction } from '../services/prompt';
-import { extractTransactions, ISO_DATE_RE, SYMBOL_RE } from '../services/ai';
+import { extractTransactions, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
@@ -93,7 +93,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const draft: ActivityImport[] = transactions.map((t, i) => {
         const date = ISO_DATE_RE.test(t.date) ? t.date : new Date().toISOString();
         const symbol = SYMBOL_RE.test(t.symbol) ? t.symbol : '';
-        const currency = /^[A-Z]{3,5}$/.test(t.currency) ? t.currency : 'USD';
+        const currency = CURRENCY_RE.test(t.currency) ? t.currency : 'USD';
         return {
           accountId: selectedAccount,
           date,
