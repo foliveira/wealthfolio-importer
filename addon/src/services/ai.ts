@@ -21,7 +21,10 @@ interface AnthropicResponse {
 }
 
 interface OpenAIResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{
+    message?: { content?: string | null; refusal?: string | null };
+    finish_reason?: string;
+  }>;
   error?: { message?: string };
 }
 
@@ -99,7 +102,7 @@ async function extractWithOpenAI(
     },
     body: JSON.stringify({
       model: 'gpt-5.4-mini',
-      max_completion_tokens: 4096,
+      max_completion_tokens: 16384,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content },
@@ -118,12 +121,18 @@ async function extractWithOpenAI(
   }
 
   const data: OpenAIResponse = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  return parseResponse(text);
+  const choice = data.choices?.[0];
+  if (choice?.message?.refusal) {
+    throw new Error(`AI refused to process the document: ${choice.message.refusal}`);
+  }
+  if (choice?.finish_reason === 'length') {
+    throw new Error('Response truncated — the document has too many transactions. Try uploading fewer pages.');
+  }
+  return parseResponse(choice?.message?.content);
 }
 
 function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
-  if (!text) throw new Error('Empty response from AI provider.');
+  if (!text) throw new Error('Empty response from AI provider. The document may be unreadable — try a clearer scan or image.');
 
   let parsed: unknown;
   try {
