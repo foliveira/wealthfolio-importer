@@ -139,25 +139,46 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         requestBody,
       );
       const valid = checked.filter((a) => a.isValid);
+      const invalid = checked.filter((a) => !a.isValid);
 
-      if (valid.length === 0) {
-        const errors = checked
-          .filter((a) => a.errors)
-          .map((a) => `Line ${a.lineNumber}: ${Object.values(a.errors!).flat().join(', ')}`)
-          .slice(0, 5);
-        throw new Error(`No valid transactions after symbol resolution.\n${errors.join('\n')}`);
+      // When some transactions have unresolved symbols, ask the user to force-import
+      let toImport = valid;
+      let forceImported = 0;
+
+      if (invalid.length > 0) {
+        const unresolvedSymbols = [...new Set(invalid.map((a) => a.symbol).filter(Boolean))];
+        const symbolList = unresolvedSymbols.length > 0
+          ? unresolvedSymbols.join(', ')
+          : 'unknown symbols';
+        const message = valid.length > 0
+          ? `${invalid.length} transaction(s) have symbols not found in market data (${symbolList}).\n\n${valid.length} transaction(s) resolved successfully.\n\nImport all transactions anyway? (unresolved symbols will be created as custom assets)`
+          : `None of the ${invalid.length} transaction(s) could be resolved in market data (${symbolList}).\n\nImport them anyway? (symbols will be created as custom assets)`;
+
+        // eslint-disable-next-line no-restricted-globals
+        if (confirm(message)) {
+          const forced = invalid.map((a) => ({ ...a, isValid: true, forceImport: true }));
+          toImport = [...valid, ...forced];
+          forceImported = forced.length;
+        } else if (valid.length > 0) {
+          // User declined — only import the valid ones
+          toImport = valid;
+        } else {
+          // Nothing to import and user declined force-import
+          setStep('review');
+          return;
+        }
       }
 
       const result = await apiCall<{ activities: ActivityImport[]; summary?: { imported?: number } }>(
         '/api/v1/activities/import',
-        { accountId: selectedAccount, activities: valid },
+        { accountId: selectedAccount, activities: toImport },
       );
-      const imported = result?.summary?.imported ?? valid.length;
-      const skipped = transactions.length - valid.length;
-      setImportResult(
-        `Successfully imported ${imported} transaction(s).` +
-        (skipped > 0 ? ` ${skipped} skipped (unresolved symbols).` : '')
-      );
+      const imported = result?.summary?.imported ?? toImport.length;
+      const skipped = transactions.length - toImport.length;
+      let msg = `Successfully imported ${imported} transaction(s).`;
+      if (forceImported > 0) msg += ` ${forceImported} with custom symbols.`;
+      if (skipped > 0) msg += ` ${skipped} skipped.`;
+      setImportResult(msg);
       setStep('done');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
