@@ -103,10 +103,12 @@ export async function extractTransactions(
   signal?: AbortSignal,
   onProgress?: (current: number, total: number) => void,
 ): Promise<ExtractedTransaction[]> {
+  if (pages.length === 0) return [];
+
   const chunks = chunkPages(pages);
 
-  if (chunks.length <= 1) {
-    return extractChunk(provider, apiKey, chunks[0] ?? [], signal);
+  if (chunks.length === 1) {
+    return extractChunk(provider, apiKey, chunks[0], signal);
   }
 
   const allResults: ExtractedTransaction[] = [];

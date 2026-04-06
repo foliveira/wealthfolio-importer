@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useMemo, useRef } from 'react';
 import { ACTIVITY_TYPES, type ExtractedTransaction } from '../services/prompt';
-import { evaluateConfidence, type FieldFlag } from '../services/ai';
+import type { FieldFlag } from '../services/ai';
 
 interface ReviewTableProps {
   transactions: ExtractedTransaction[];
   onChange: (transactions: ExtractedTransaction[]) => void;
+  flagsByIndex: Map<number, FieldFlag[]>;
 }
 
 const cellStyle: React.CSSProperties = {
@@ -21,11 +22,6 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--foreground)',
   fontSize: '12px',
   boxSizing: 'border-box',
-};
-
-const flaggedInputStyle: React.CSSProperties = {
-  ...inputStyle,
-  border: '1px solid hsl(38 92% 50%)',
 };
 
 interface RowProps {
@@ -98,15 +94,9 @@ const TransactionRow = memo(function TransactionRow({ row, index, flags, onUpdat
   );
 });
 
-export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
+export function ReviewTable({ transactions, onChange, flagsByIndex }: ReviewTableProps) {
   const txRef = useRef(transactions);
   txRef.current = transactions;
-
-  // Derive confidence flags from current transactions — auto-updates on edit
-  const flagsByIndex = useMemo(
-    () => new Map(transactions.map((t, i) => [i, evaluateConfidence(t)] as const)),
-    [transactions],
-  );
 
   const totalWarnings = useMemo(
     () => Array.from(flagsByIndex.values()).reduce((sum, flags) => sum + flags.length, 0),

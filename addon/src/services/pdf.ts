@@ -4,7 +4,7 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import pdfjsWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
 
 const MAX_PAGES = 100;
-const LARGE_DOC_THRESHOLD = 50;
+export const LARGE_DOC_THRESHOLD = 50;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
@@ -101,7 +101,8 @@ async function extractPageText(page: pdfjsLib.PDFPageProxy): Promise<string | nu
 
   if (items.length === 0) return null;
 
-  const text = reconstructLayout(items);
+  // Strip zero-width and control characters that could be used for prompt injection
+  const text = reconstructLayout(items).replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
   if (text.length < MIN_TEXT_LENGTH) return null;
   if (isGarbled(text)) return null;
 
@@ -148,14 +149,6 @@ export async function pdfToContent(file: File): Promise<{ pages: PageContent[] }
   if (pageCount > MAX_PAGES) {
     pdf.destroy();
     throw new Error(`PDF has ${pageCount} pages. Maximum supported is ${MAX_PAGES}.`);
-  }
-
-  // eslint-disable-next-line no-restricted-globals
-  if (pageCount > LARGE_DOC_THRESHOLD && !confirm(
-    `This document has ${pageCount} pages. Processing may take several minutes and consume significant API credits. Continue?`,
-  )) {
-    pdf.destroy();
-    throw new Error('Processing cancelled by user.');
   }
 
   const pages: PageContent[] = [];

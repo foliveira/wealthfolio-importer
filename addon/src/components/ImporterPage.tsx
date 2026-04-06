@@ -59,9 +59,17 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       let pages: PageContent[];
 
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        const { pdfToContent } = await import('../services/pdf');
+        const { pdfToContent, LARGE_DOC_THRESHOLD } = await import('../services/pdf');
         const result = await pdfToContent(file);
         pages = result.pages;
+
+        // eslint-disable-next-line no-restricted-globals
+        if (pages.length > LARGE_DOC_THRESHOLD && !confirm(
+          `This document has ${pages.length} pages. Processing may take several minutes and consume significant API credits. Continue?`,
+        )) {
+          setStep('upload');
+          return;
+        }
       } else {
         const { imageToBase64, getMediaType } = await import('../services/pdf');
         const base64 = await imageToBase64(file);
@@ -199,9 +207,14 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     }
   }
 
-  const warningCount = useMemo(
-    () => transactions.reduce((sum, t) => sum + evaluateConfidence(t).length, 0),
+  const flagsByIndex = useMemo(
+    () => new Map(transactions.map((t, i) => [i, evaluateConfidence(t)] as const)),
     [transactions],
+  );
+
+  const warningCount = useMemo(
+    () => Array.from(flagsByIndex.values()).reduce((sum, f) => sum + f.length, 0),
+    [flagsByIndex],
   );
 
   function startOver() {
@@ -260,7 +273,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       {/* Review */}
       {step === 'review' && (
         <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <ReviewTable transactions={transactions} onChange={setTransactions} />
+          <ReviewTable transactions={transactions} onChange={setTransactions} flagsByIndex={flagsByIndex} />
 
           <div style={{ marginTop: '16px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '13px', fontWeight: 500 }}>Import to:</label>
