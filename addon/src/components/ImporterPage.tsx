@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
+import type { PageContent } from '../services/pdf';
 import type { ExtractedTransaction } from '../services/prompt';
 import { extractTransactions, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
 import { Settings } from './Settings';
@@ -49,23 +50,26 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
     setStep('extracting');
 
+    // Cancel any in-flight extraction before starting a new one
+    if (abortRef.current) abortRef.current.abort();
+
     try {
-      let images: { base64: string; mediaType: string }[] = [];
+      let pages: PageContent[];
 
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        const { pdfToImages } = await import('../services/pdf');
-        const result = await pdfToImages(file);
-        images = result.images.map((base64) => ({ base64, mediaType: 'image/jpeg' }));
+        const { pdfToContent } = await import('../services/pdf');
+        const result = await pdfToContent(file);
+        pages = result.pages;
       } else {
         const { imageToBase64, getMediaType } = await import('../services/pdf');
         const base64 = await imageToBase64(file);
-        images = [{ base64, mediaType: getMediaType(file) }];
+        pages = [{ mode: 'image', base64, mediaType: getMediaType(file), pageNumber: 1 }];
       }
 
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const extracted = await extractTransactions(provider, apiKey, images, abort.signal);
+      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal);
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
