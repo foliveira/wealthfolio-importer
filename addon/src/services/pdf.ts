@@ -3,7 +3,8 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 // @ts-expect-error -- Vite ?raw import has no type declaration
 import pdfjsWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
 
-const MAX_PAGES = 20;
+const MAX_PAGES = 100;
+const LARGE_DOC_THRESHOLD = 50;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
@@ -147,6 +148,14 @@ export async function pdfToContent(file: File): Promise<{ pages: PageContent[] }
   if (pageCount > MAX_PAGES) {
     pdf.destroy();
     throw new Error(`PDF has ${pageCount} pages. Maximum supported is ${MAX_PAGES}.`);
+  }
+
+  // eslint-disable-next-line no-restricted-globals
+  if (pageCount > LARGE_DOC_THRESHOLD && !confirm(
+    `This document has ${pageCount} pages. Processing may take several minutes and consume significant API credits. Continue?`,
+  )) {
+    pdf.destroy();
+    throw new Error('Processing cancelled by user.');
   }
 
   const pages: PageContent[] = [];

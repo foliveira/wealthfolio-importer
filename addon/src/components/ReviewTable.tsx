@@ -1,5 +1,6 @@
-import React, { memo, useCallback, useRef } from 'react';
+import React, { memo, useCallback, useMemo, useRef } from 'react';
 import { ACTIVITY_TYPES, type ExtractedTransaction } from '../services/prompt';
+import { evaluateConfidence, type FieldFlag } from '../services/ai';
 
 interface ReviewTableProps {
   transactions: ExtractedTransaction[];
@@ -22,24 +23,43 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
+const flaggedInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  border: '1px solid hsl(38 92% 50%)',
+};
+
 interface RowProps {
   row: ExtractedTransaction;
   index: number;
+  flags: FieldFlag[];
   onUpdate: (index: number, field: keyof ExtractedTransaction, value: string | number) => void;
   onDelete: (index: number) => void;
 }
 
-const TransactionRow = memo(function TransactionRow({ row, index, onUpdate, onDelete }: RowProps) {
+function flagFor(flags: FieldFlag[], field: keyof ExtractedTransaction): string | undefined {
+  const flag = flags.find(f => f.field === field);
+  return flag?.reason;
+}
+
+function inputProps(flags: FieldFlag[], field: keyof ExtractedTransaction, base: React.CSSProperties) {
+  const reason = flagFor(flags, field);
+  return {
+    style: reason ? { ...base, border: '1px solid hsl(38 92% 50%)' } : base,
+    title: reason || undefined,
+  };
+}
+
+const TransactionRow = memo(function TransactionRow({ row, index, flags, onUpdate, onDelete }: RowProps) {
   return (
     <tr>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '160px' }} maxLength={30} value={row.date} onChange={(e) => onUpdate(index, 'date', e.target.value)} />
+        <input {...inputProps(flags, 'date', { ...inputStyle, minWidth: '160px' })} maxLength={30} value={row.date} onChange={(e) => onUpdate(index, 'date', e.target.value)} />
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '80px' }} maxLength={20} value={row.symbol} onChange={(e) => onUpdate(index, 'symbol', e.target.value)} />
+        <input {...inputProps(flags, 'symbol', { ...inputStyle, minWidth: '80px' })} maxLength={20} value={row.symbol} onChange={(e) => onUpdate(index, 'symbol', e.target.value)} />
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '70px' }} type="number" step="any" value={row.quantity} onChange={(e) => onUpdate(index, 'quantity', +e.target.value)} />
+        <input {...inputProps(flags, 'quantity', { ...inputStyle, minWidth: '70px' })} type="number" step="any" value={row.quantity} onChange={(e) => onUpdate(index, 'quantity', +e.target.value)} />
       </td>
       <td style={cellStyle}>
         <select
@@ -53,16 +73,16 @@ const TransactionRow = memo(function TransactionRow({ row, index, onUpdate, onDe
         </select>
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.unitPrice} onChange={(e) => onUpdate(index, 'unitPrice', +e.target.value)} />
+        <input {...inputProps(flags, 'unitPrice', { ...inputStyle, minWidth: '80px' })} type="number" step="any" value={row.unitPrice} onChange={(e) => onUpdate(index, 'unitPrice', +e.target.value)} />
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '50px' }} maxLength={5} value={row.currency} onChange={(e) => onUpdate(index, 'currency', e.target.value)} />
+        <input {...inputProps(flags, 'currency', { ...inputStyle, minWidth: '50px' })} maxLength={5} value={row.currency} onChange={(e) => onUpdate(index, 'currency', e.target.value)} />
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '60px' }} type="number" step="any" value={row.fee} onChange={(e) => onUpdate(index, 'fee', +e.target.value)} />
+        <input {...inputProps(flags, 'fee', { ...inputStyle, minWidth: '60px' })} type="number" step="any" value={row.fee} onChange={(e) => onUpdate(index, 'fee', +e.target.value)} />
       </td>
       <td style={cellStyle}>
-        <input style={{ ...inputStyle, minWidth: '80px' }} type="number" step="any" value={row.amount} onChange={(e) => onUpdate(index, 'amount', +e.target.value)} />
+        <input {...inputProps(flags, 'amount', { ...inputStyle, minWidth: '80px' })} type="number" step="any" value={row.amount} onChange={(e) => onUpdate(index, 'amount', +e.target.value)} />
       </td>
       <td style={cellStyle}>
         <button
@@ -81,6 +101,17 @@ const TransactionRow = memo(function TransactionRow({ row, index, onUpdate, onDe
 export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
   const txRef = useRef(transactions);
   txRef.current = transactions;
+
+  // Derive confidence flags from current transactions — auto-updates on edit
+  const flagsByIndex = useMemo(
+    () => new Map(transactions.map((t, i) => [i, evaluateConfidence(t)] as const)),
+    [transactions],
+  );
+
+  const totalWarnings = useMemo(
+    () => Array.from(flagsByIndex.values()).reduce((sum, flags) => sum + flags.length, 0),
+    [flagsByIndex],
+  );
 
   const updateRow = useCallback((index: number, field: keyof ExtractedTransaction, value: string | number) => {
     const updated = [...txRef.current];
@@ -113,6 +144,11 @@ export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>
           {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+          {totalWarnings > 0 && (
+            <span style={{ color: 'hsl(38 92% 50%)', marginLeft: '8px' }}>
+              ({totalWarnings} warning{totalWarnings !== 1 ? 's' : ''})
+            </span>
+          )}
         </span>
         <button
           onClick={addRow}
@@ -140,7 +176,7 @@ export function ReviewTable({ transactions, onChange }: ReviewTableProps) {
             </thead>
             <tbody>
               {transactions.map((row, i) => (
-                <TransactionRow key={`${row.date}-${row.symbol}-${i}`} row={row} index={i} onUpdate={updateRow} onDelete={deleteRow} />
+                <TransactionRow key={`${row.date}-${row.symbol}-${i}`} row={row} index={i} flags={flagsByIndex.get(i) ?? []} onUpdate={updateRow} onDelete={deleteRow} />
               ))}
             </tbody>
           </table>

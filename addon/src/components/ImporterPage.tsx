@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { PageContent } from '../services/pdf';
 import type { ExtractedTransaction } from '../services/prompt';
-import { extractTransactions, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
+import { extractTransactions, evaluateConfidence, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
@@ -26,6 +26,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [importResult, setImportResult] = useState('');
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load accounts once
@@ -49,6 +50,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     }
 
     setStep('extracting');
+    setProgress(null);
 
     // Cancel any in-flight extraction before starting a new one
     if (abortRef.current) abortRef.current.abort();
@@ -69,7 +71,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal);
+      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }));
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
@@ -81,6 +83,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       setStep('upload');
     } finally {
       abortRef.current = null;
+      setProgress(null);
     }
   }
 
@@ -196,6 +199,11 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     }
   }
 
+  const warningCount = useMemo(
+    () => transactions.reduce((sum, t) => sum + evaluateConfidence(t).length, 0),
+    [transactions],
+  );
+
   function startOver() {
     setStep('upload');
     setTransactions([]);
@@ -235,6 +243,11 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         <div style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
           <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <p style={{ marginTop: '12px' }}>Extracting transactions from <strong>{fileName}</strong>...</p>
+          {progress && progress.total > 1 && (
+            <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+              Processing chunk {progress.current} of {progress.total}...
+            </p>
+          )}
           <button
             onClick={() => abortRef.current?.abort()}
             style={{ marginTop: '8px', padding: '6px 16px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', cursor: 'pointer', fontSize: '13px' }}
@@ -274,7 +287,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
               disabled={transactions.length === 0}
               style={{ padding: '6px 16px', borderRadius: '6px', border: 'none', background: 'var(--primary)', color: 'var(--primary-foreground)', cursor: transactions.length === 0 ? 'not-allowed' : 'pointer', opacity: transactions.length === 0 ? 0.5 : 1, fontSize: '13px', fontWeight: 500 }}
             >
-              Import {transactions.length} Transaction{transactions.length !== 1 ? 's' : ''}
+              Import {transactions.length} Transaction{transactions.length !== 1 ? 's' : ''}{warningCount > 0 ? ` (${warningCount} warning${warningCount !== 1 ? 's' : ''})` : ''}
             </button>
           </div>
         </div>
