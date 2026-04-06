@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
+import type { PageContent } from '../services/pdf';
 import type { ExtractedTransaction } from '../services/prompt';
-import { extractTransactions, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
+import { extractTransactions, evaluateConfidence, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
@@ -25,6 +26,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [importResult, setImportResult] = useState('');
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load accounts once
@@ -48,24 +50,36 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     }
 
     setStep('extracting');
+    setProgress(null);
+
+    // Cancel any in-flight extraction before starting a new one
+    if (abortRef.current) abortRef.current.abort();
 
     try {
-      let images: { base64: string; mediaType: string }[] = [];
+      let pages: PageContent[];
 
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        const { pdfToImages } = await import('../services/pdf');
-        const result = await pdfToImages(file);
-        images = result.images.map((base64) => ({ base64, mediaType: 'image/jpeg' }));
+        const { pdfToContent, LARGE_DOC_THRESHOLD } = await import('../services/pdf');
+        const result = await pdfToContent(file);
+        pages = result.pages;
+
+        // eslint-disable-next-line no-restricted-globals
+        if (pages.length > LARGE_DOC_THRESHOLD && !confirm(
+          `This document has ${pages.length} pages. Processing may take several minutes and consume significant API credits. Continue?`,
+        )) {
+          setStep('upload');
+          return;
+        }
       } else {
         const { imageToBase64, getMediaType } = await import('../services/pdf');
         const base64 = await imageToBase64(file);
-        images = [{ base64, mediaType: getMediaType(file) }];
+        pages = [{ mode: 'image', base64, mediaType: getMediaType(file), pageNumber: 1 }];
       }
 
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const extracted = await extractTransactions(provider, apiKey, images, abort.signal);
+      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }));
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
@@ -77,6 +91,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       setStep('upload');
     } finally {
       abortRef.current = null;
+      setProgress(null);
     }
   }
 
@@ -192,6 +207,16 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     }
   }
 
+  const flagsByIndex = useMemo(
+    () => new Map(transactions.map((t, i) => [i, evaluateConfidence(t)] as const)),
+    [transactions],
+  );
+
+  const warningCount = useMemo(
+    () => Array.from(flagsByIndex.values()).reduce((sum, f) => sum + f.length, 0),
+    [flagsByIndex],
+  );
+
   function startOver() {
     setStep('upload');
     setTransactions([]);
@@ -231,6 +256,11 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         <div style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
           <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <p style={{ marginTop: '12px' }}>Extracting transactions from <strong>{fileName}</strong>...</p>
+          {progress && progress.total > 1 && (
+            <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+              Processing chunk {progress.current} of {progress.total}...
+            </p>
+          )}
           <button
             onClick={() => abortRef.current?.abort()}
             style={{ marginTop: '8px', padding: '6px 16px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', cursor: 'pointer', fontSize: '13px' }}
@@ -243,7 +273,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       {/* Review */}
       {step === 'review' && (
         <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <ReviewTable transactions={transactions} onChange={setTransactions} />
+          <ReviewTable transactions={transactions} onChange={setTransactions} flagsByIndex={flagsByIndex} />
 
           <div style={{ marginTop: '16px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '13px', fontWeight: 500 }}>Import to:</label>
@@ -270,7 +300,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
               disabled={transactions.length === 0}
               style={{ padding: '6px 16px', borderRadius: '6px', border: 'none', background: 'var(--primary)', color: 'var(--primary-foreground)', cursor: transactions.length === 0 ? 'not-allowed' : 'pointer', opacity: transactions.length === 0 ? 0.5 : 1, fontSize: '13px', fontWeight: 500 }}
             >
-              Import {transactions.length} Transaction{transactions.length !== 1 ? 's' : ''}
+              Import {transactions.length} Transaction{transactions.length !== 1 ? 's' : ''}{warningCount > 0 ? ` (${warningCount} warning${warningCount !== 1 ? 's' : ''})` : ''}
             </button>
           </div>
         </div>
