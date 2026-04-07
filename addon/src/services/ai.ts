@@ -266,7 +266,7 @@ async function extractWithOpenAI(
   return parseResponse(choice?.message?.content);
 }
 
-function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
+export function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
   if (!text) throw new Error('Empty response from AI provider. The document may be unreadable — try a clearer scan or image.');
 
   let parsed: unknown;
@@ -299,7 +299,7 @@ export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?)
 export const SYMBOL_RE = /^[\w.$\-/]{0,20}$/;
 export const CURRENCY_RE = /^[A-Z]{3,5}$/;
 
-function validateTransaction(t: unknown): ExtractedTransaction {
+export function validateTransaction(t: unknown): ExtractedTransaction {
   const obj = (typeof t === 'object' && t !== null ? t : {}) as Record<string, unknown>;
   return {
     date: typeof obj.date === 'string' && ISO_DATE_RE.test(obj.date) ? obj.date : '',
