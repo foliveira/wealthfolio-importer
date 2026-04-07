@@ -91,6 +91,14 @@ export function evaluateConfidence(txn: ExtractedTransaction): FieldFlag[] {
     flags.push({ field: 'amount', reason: 'Zero amount' });
   if (txn.fee > txn.amount && txn.amount > 0)
     flags.push({ field: 'fee', reason: 'Fee exceeds transaction amount' });
+  if (
+    ['BUY', 'SELL'].includes(txn.activityType) &&
+    txn.quantity > 0 && txn.unitPrice > 0 && txn.amount !== 0
+  ) {
+    const expected = txn.quantity * txn.unitPrice;
+    if (Math.abs(txn.amount - expected) / Math.abs(txn.amount) > 0.01)
+      flags.push({ field: 'amount', reason: "Amount doesn't match quantity × price" });
+  }
   return flags;
 }
 

@@ -177,6 +177,38 @@ describe('evaluateConfidence', () => {
     expect(flags.find(f => f.field === 'fee')).toBeUndefined();
   });
 
+  it('flags amount that diverges from qty × price by more than 1%', () => {
+    // 10 × 150 = 1500, but amount is 2000 → 33% off
+    const flags = evaluateConfidence(makeTxn({ quantity: 10, unitPrice: 150, amount: 2000 }));
+    expect(flags).toContainEqual({ field: 'amount', reason: "Amount doesn't match quantity × price" });
+  });
+
+  it('does not flag amount within 1% tolerance', () => {
+    // 10 × 150 = 1500, amount is 1505 → 0.33% off (within tolerance)
+    const flags = evaluateConfidence(makeTxn({ quantity: 10, unitPrice: 150, amount: 1505 }));
+    expect(flags.find(f => f.reason === "Amount doesn't match quantity × price")).toBeUndefined();
+  });
+
+  it('does not flag amount cross-validation on DIVIDEND', () => {
+    const flags = evaluateConfidence(makeTxn({ activityType: 'DIVIDEND', quantity: 100, unitPrice: 0.5, amount: 200 }));
+    expect(flags.find(f => f.reason === "Amount doesn't match quantity × price")).toBeUndefined();
+  });
+
+  it('skips cross-validation when quantity is zero', () => {
+    const flags = evaluateConfidence(makeTxn({ quantity: 0, unitPrice: 150, amount: 1500 }));
+    expect(flags.find(f => f.reason === "Amount doesn't match quantity × price")).toBeUndefined();
+  });
+
+  it('skips cross-validation when unitPrice is zero', () => {
+    const flags = evaluateConfidence(makeTxn({ unitPrice: 0, quantity: 10, amount: 1500 }));
+    expect(flags.find(f => f.reason === "Amount doesn't match quantity × price")).toBeUndefined();
+  });
+
+  it('skips cross-validation when amount is zero', () => {
+    const flags = evaluateConfidence(makeTxn({ amount: 0, quantity: 10, unitPrice: 150 }));
+    expect(flags.find(f => f.reason === "Amount doesn't match quantity × price")).toBeUndefined();
+  });
+
   it('can return multiple flags at once', () => {
     const flags = evaluateConfidence(makeTxn({ symbol: '', date: '', unitPrice: 0 }));
     expect(flags.length).toBeGreaterThanOrEqual(3);
