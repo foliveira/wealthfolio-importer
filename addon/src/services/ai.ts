@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, buildSystemPrompt, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction, type DateFormat } from './prompt';
+import { buildSystemPrompt, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction, type DateFormat, type ActivityType } from './prompt';
 import type { PageContent } from './pdf';
 
 export type Provider = 'anthropic' | 'openai';
@@ -77,24 +77,25 @@ export interface FieldFlag {
   reason: string;
 }
 
+const TRADE_TYPES: readonly ActivityType[] = ['BUY', 'SELL'];
+const AMOUNT_REQUIRED_TYPES: readonly ActivityType[] = ['BUY', 'SELL', 'DIVIDEND'];
+
 export function evaluateConfidence(txn: ExtractedTransaction): FieldFlag[] {
   const flags: FieldFlag[] = [];
-  if (txn.unitPrice === 0 && ['BUY', 'SELL'].includes(txn.activityType))
+  const isTrade = TRADE_TYPES.includes(txn.activityType);
+  if (txn.unitPrice === 0 && isTrade)
     flags.push({ field: 'unitPrice', reason: 'Price is $0 for a trade' });
   if (!txn.symbol)
     flags.push({ field: 'symbol', reason: 'Missing symbol' });
   if (!txn.date)
     flags.push({ field: 'date', reason: 'Missing date' });
-  if (txn.quantity === 0 && ['BUY', 'SELL'].includes(txn.activityType))
+  if (txn.quantity === 0 && isTrade)
     flags.push({ field: 'quantity', reason: 'Zero quantity for a trade' });
-  if (txn.amount === 0 && ['BUY', 'SELL', 'DIVIDEND'].includes(txn.activityType))
+  if (txn.amount === 0 && AMOUNT_REQUIRED_TYPES.includes(txn.activityType))
     flags.push({ field: 'amount', reason: 'Zero amount' });
   if (txn.fee > txn.amount && txn.amount > 0)
     flags.push({ field: 'fee', reason: 'Fee exceeds transaction amount' });
-  if (
-    ['BUY', 'SELL'].includes(txn.activityType) &&
-    txn.quantity > 0 && txn.unitPrice > 0 && txn.amount !== 0
-  ) {
+  if (isTrade && txn.quantity > 0 && txn.unitPrice > 0 && txn.amount !== 0) {
     const expected = txn.quantity * txn.unitPrice;
     if (Math.abs(txn.amount - expected) / Math.abs(txn.amount) > 0.01)
       flags.push({ field: 'amount', reason: "Amount doesn't match quantity × price" });
@@ -110,12 +111,12 @@ export async function extractTransactions(
   pages: PageContent[],
   signal?: AbortSignal,
   onProgress?: (current: number, total: number) => void,
-  dateFormat?: DateFormat,
+  dateFormat: DateFormat = 'DD/MM/YYYY',
 ): Promise<ExtractedTransaction[]> {
   if (pages.length === 0) return [];
 
   const chunks = chunkPages(pages);
-  const systemPrompt = dateFormat ? buildSystemPrompt(dateFormat) : SYSTEM_PROMPT;
+  const systemPrompt = buildSystemPrompt(dateFormat);
 
   if (chunks.length === 1) {
     return extractChunk(provider, apiKey, chunks[0], signal, systemPrompt);
@@ -142,7 +143,7 @@ function extractChunk(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
-  systemPrompt: string = SYSTEM_PROMPT,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   if (provider === 'anthropic') {
     return extractWithAnthropic(apiKey, pages, signal, systemPrompt);
@@ -202,7 +203,7 @@ async function extractWithAnthropic(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
-  systemPrompt: string = SYSTEM_PROMPT,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   const content = buildAnthropicContent(pages);
 
@@ -237,7 +238,7 @@ async function extractWithOpenAI(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
-  systemPrompt: string = SYSTEM_PROMPT,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   const content = buildOpenAIContent(pages);
 

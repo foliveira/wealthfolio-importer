@@ -51,9 +51,6 @@ Rules:
 - Return an empty array [] if no transactions are found.`;
 }
 
-/** @deprecated Use buildSystemPrompt() for new code */
-export const SYSTEM_PROMPT = buildSystemPrompt();
-
 export const USER_PROMPT = 'Extract all investment transactions from this document.';
 
 export const TRANSACTION_SCHEMA = {

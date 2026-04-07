@@ -53,7 +53,9 @@ export function Settings({ secrets, logger, provider, onProviderChange, apiKey, 
     }, 500);
   };
 
-  const handleDateFormatChange = (f: DateFormat) => {
+  const handleDateFormatChange = (value: string) => {
+    if (!(DATE_FORMATS as readonly string[]).includes(value)) return;
+    const f = value as DateFormat;
     onDateFormatChange(f);
     secrets.set('date-format', f).catch((e) => logger.error(`[AI Importer] Failed to save date format: ${e}`));
   };
@@ -98,7 +100,7 @@ export function Settings({ secrets, logger, provider, onProviderChange, apiKey, 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <select
           value={dateFormat}
-          onChange={(e) => handleDateFormatChange(e.target.value as DateFormat)}
+          onChange={(e) => handleDateFormatChange(e.target.value)}
           style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: '13px' }}
         >
           {DATE_FORMATS.map((f) => (

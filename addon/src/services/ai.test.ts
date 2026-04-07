@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateTransaction, evaluateConfidence, parseResponse, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from './ai';
-import { buildSystemPrompt, SYSTEM_PROMPT } from './prompt';
+import { buildSystemPrompt } from './prompt';
 import type { ExtractedTransaction } from './prompt';
 
 // --- Helpers ---
@@ -303,8 +303,8 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('ISO 8601 format');
   });
 
-  it('SYSTEM_PROMPT constant matches default buildSystemPrompt()', () => {
-    expect(SYSTEM_PROMPT).toBe(buildSystemPrompt());
+  it('default produces DD/MM/YYYY hint', () => {
+    expect(buildSystemPrompt()).toContain('Dates in the source document use DD/MM/YYYY ordering');
   });
 });
 
