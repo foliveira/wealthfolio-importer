@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
-import type { Provider } from '../services/ai';
+import type { AIConfig } from '../services/ai';
 import type { PageContent } from '../services/pdf';
 import type { ExtractedTransaction, DateFormat } from '../services/prompt';
 import { extractTransactions, evaluateConfidence, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
@@ -17,8 +17,11 @@ interface ImporterPageProps {
 }
 
 export function ImporterPage({ ctx }: ImporterPageProps) {
-  const [provider, setProvider] = useState<Provider>('anthropic');
-  const [apiKey, setApiKey] = useState('');
+  const [config, setConfig] = useState<AIConfig>({
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    model: '',
+  });
   const [dateFormat, setDateFormat] = useState<DateFormat>('DD/MM/YYYY');
   const [step, setStep] = useState<Step>('upload');
   const [transactions, setTransactions] = useState<ExtractedTransaction[]>([]);
@@ -45,8 +48,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setError('');
     setFileName(file.name);
 
-    if (!apiKey) {
-      setError('Please enter your API key first.');
+    if (!config.model) {
+      setError('Please select a model first. Use "Test Connection" to load available models.');
       return;
     }
 
@@ -80,7 +83,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }), dateFormat);
+      const extracted = await extractTransactions(config, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }), dateFormat);
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
@@ -202,7 +205,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       ctx.api.logger.error(`[AI Importer] Import failed: ${message}`);
       if (detail && detail !== '{}') ctx.api.logger.error(`[AI Importer] Error detail: ${detail}`);
       // Show a sanitized message to the user — full details stay in the logger
-      const userMessage = message.length > 200 ? message.slice(0, 200) + '…' : message;
+      const userMessage = message.length > 200 ? message.slice(0, 200) + '...' : message;
       setError(`Import failed: ${userMessage}`);
       setStep('review');
     }
@@ -226,6 +229,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setFileName('');
   }
 
+  const canUpload = !!config.model;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', maxWidth: '960px' }}>
       <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>AI Importer</h2>
@@ -238,10 +243,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         <Settings
           secrets={ctx.api.secrets}
           logger={ctx.api.logger}
-          provider={provider}
-          onProviderChange={setProvider}
-          apiKey={apiKey}
-          onApiKeyChange={setApiKey}
+          config={config}
+          onConfigChange={setConfig}
           dateFormat={dateFormat}
           onDateFormatChange={setDateFormat}
         />
@@ -250,7 +253,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       {/* Upload */}
       {step === 'upload' && (
         <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <Upload onFile={handleFile} disabled={!apiKey} />
+          <Upload onFile={handleFile} disabled={!canUpload} />
         </div>
       )}
 
