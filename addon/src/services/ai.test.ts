@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateTransaction, evaluateConfidence, parseResponse, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from './ai';
+import { buildSystemPrompt, SYSTEM_PROMPT } from './prompt';
 import type { ExtractedTransaction } from './prompt';
 
 // --- Helpers ---
@@ -276,6 +277,34 @@ describe('parseResponse', () => {
     const result = parseResponse(json);
     expect(result[0].date).toBe('');
     expect(result[0].quantity).toBe(0);
+  });
+});
+
+// --- buildSystemPrompt ---
+
+describe('buildSystemPrompt', () => {
+  it('includes the specified date format as an interpretation hint', () => {
+    const prompt = buildSystemPrompt('MM/DD/YYYY');
+    expect(prompt).toContain('Dates in the source document use MM/DD/YYYY ordering');
+  });
+
+  it('defaults to DD/MM/YYYY', () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('Dates in the source document use DD/MM/YYYY ordering');
+  });
+
+  it('includes YYYY-MM-DD when specified', () => {
+    const prompt = buildSystemPrompt('YYYY-MM-DD');
+    expect(prompt).toContain('Dates in the source document use YYYY-MM-DD ordering');
+  });
+
+  it('still requires ISO 8601 output format', () => {
+    const prompt = buildSystemPrompt('DD/MM/YYYY');
+    expect(prompt).toContain('ISO 8601 format');
+  });
+
+  it('SYSTEM_PROMPT constant matches default buildSystemPrompt()', () => {
+    expect(SYSTEM_PROMPT).toBe(buildSystemPrompt());
   });
 });
 

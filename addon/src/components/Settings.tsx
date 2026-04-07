@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { SecretsAPI, HostAPI } from '../types';
 import type { Provider } from '../services/ai';
+import { DATE_FORMATS, type DateFormat } from '../services/prompt';
 
 interface SettingsProps {
   secrets: SecretsAPI;
@@ -9,9 +10,11 @@ interface SettingsProps {
   onProviderChange: (p: Provider) => void;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
+  dateFormat: DateFormat;
+  onDateFormatChange: (f: DateFormat) => void;
 }
 
-export function Settings({ secrets, logger, provider, onProviderChange, apiKey, onApiKeyChange }: SettingsProps) {
+export function Settings({ secrets, logger, provider, onProviderChange, apiKey, onApiKeyChange, dateFormat, onDateFormatChange }: SettingsProps) {
   const [showKey, setShowKey] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -23,6 +26,9 @@ export function Settings({ secrets, logger, provider, onProviderChange, apiKey, 
     secrets.get('api-key').then((k) => {
       if (k) onApiKeyChange(k);
     }).catch((e) => logger.error(`[AI Importer] Failed to load API key: ${e}`));
+    secrets.get('date-format').then((f) => {
+      if (f && (DATE_FORMATS as readonly string[]).includes(f)) onDateFormatChange(f as DateFormat);
+    }).catch((e) => logger.error(`[AI Importer] Failed to load date format: ${e}`));
   }, []);
 
   useEffect(() => {
@@ -45,6 +51,11 @@ export function Settings({ secrets, logger, provider, onProviderChange, apiKey, 
         secrets.delete('api-key').catch((e) => logger.error(`[AI Importer] Failed to delete API key: ${e}`));
       }
     }, 500);
+  };
+
+  const handleDateFormatChange = (f: DateFormat) => {
+    onDateFormatChange(f);
+    secrets.set('date-format', f).catch((e) => logger.error(`[AI Importer] Failed to save date format: ${e}`));
   };
 
   return (
@@ -80,6 +91,24 @@ export function Settings({ secrets, logger, provider, onProviderChange, apiKey, 
 
       <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted-foreground)' }}>
         Stored securely in Wealthfolio. Only sent to {provider === 'anthropic' ? 'Anthropic' : 'OpenAI'}.
+      </p>
+
+      <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Document Date Format</h3>
+
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <select
+          value={dateFormat}
+          onChange={(e) => handleDateFormatChange(e.target.value as DateFormat)}
+          style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: '13px' }}
+        >
+          {DATE_FORMATS.map((f) => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </select>
+      </div>
+
+      <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted-foreground)' }}>
+        How dates appear in your brokerage statements. Helps the AI correctly interpret ambiguous dates like 03/04/2025.
       </p>
     </div>
   );

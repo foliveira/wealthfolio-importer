@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction } from './prompt';
+import { SYSTEM_PROMPT, buildSystemPrompt, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction, type DateFormat } from './prompt';
 import type { PageContent } from './pdf';
 
 export type Provider = 'anthropic' | 'openai';
@@ -110,13 +110,15 @@ export async function extractTransactions(
   pages: PageContent[],
   signal?: AbortSignal,
   onProgress?: (current: number, total: number) => void,
+  dateFormat?: DateFormat,
 ): Promise<ExtractedTransaction[]> {
   if (pages.length === 0) return [];
 
   const chunks = chunkPages(pages);
+  const systemPrompt = dateFormat ? buildSystemPrompt(dateFormat) : SYSTEM_PROMPT;
 
   if (chunks.length === 1) {
-    return extractChunk(provider, apiKey, chunks[0], signal);
+    return extractChunk(provider, apiKey, chunks[0], signal, systemPrompt);
   }
 
   const allResults: ExtractedTransaction[] = [];
@@ -124,7 +126,7 @@ export async function extractTransactions(
     signal?.throwIfAborted();
     onProgress?.(i + 1, chunks.length);
     try {
-      const results = await extractChunk(provider, apiKey, chunks[i], signal);
+      const results = await extractChunk(provider, apiKey, chunks[i], signal, systemPrompt);
       allResults.push(...results);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') throw err;
@@ -140,11 +142,12 @@ function extractChunk(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = SYSTEM_PROMPT,
 ): Promise<ExtractedTransaction[]> {
   if (provider === 'anthropic') {
-    return extractWithAnthropic(apiKey, pages, signal);
+    return extractWithAnthropic(apiKey, pages, signal, systemPrompt);
   }
-  return extractWithOpenAI(apiKey, pages, signal);
+  return extractWithOpenAI(apiKey, pages, signal, systemPrompt);
 }
 
 function buildAnthropicContent(pages: PageContent[]): AnthropicContentBlock[] {
@@ -199,6 +202,7 @@ async function extractWithAnthropic(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = SYSTEM_PROMPT,
 ): Promise<ExtractedTransaction[]> {
   const content = buildAnthropicContent(pages);
 
@@ -213,7 +217,7 @@ async function extractWithAnthropic(
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250514',
       max_tokens: 16384,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: 'user', content }],
     }),
     signal,
@@ -233,6 +237,7 @@ async function extractWithOpenAI(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = SYSTEM_PROMPT,
 ): Promise<ExtractedTransaction[]> {
   const content = buildOpenAIContent(pages);
 
@@ -247,7 +252,7 @@ async function extractWithOpenAI(
       max_completion_tokens: 16384,
       reasoning_effort: 'low',
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content },
       ],
       response_format: {
