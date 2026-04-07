@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
 import type { Provider } from '../services/ai';
 import type { PageContent } from '../services/pdf';
-import type { ExtractedTransaction } from '../services/prompt';
+import type { ExtractedTransaction, DateFormat } from '../services/prompt';
 import { extractTransactions, evaluateConfidence, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
@@ -19,6 +19,7 @@ interface ImporterPageProps {
 export function ImporterPage({ ctx }: ImporterPageProps) {
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [apiKey, setApiKey] = useState('');
+  const [dateFormat, setDateFormat] = useState<DateFormat>('DD/MM/YYYY');
   const [step, setStep] = useState<Step>('upload');
   const [transactions, setTransactions] = useState<ExtractedTransaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -79,7 +80,7 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }));
+      const extracted = await extractTransactions(provider, apiKey, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }), dateFormat);
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
@@ -241,6 +242,8 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
           onProviderChange={setProvider}
           apiKey={apiKey}
           onApiKeyChange={setApiKey}
+          dateFormat={dateFormat}
+          onDateFormatChange={setDateFormat}
         />
       </div>
 

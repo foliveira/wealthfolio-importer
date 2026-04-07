@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction } from './prompt';
+import { buildSystemPrompt, USER_PROMPT, TRANSACTION_SCHEMA, ACTIVITY_TYPES, type ExtractedTransaction, type DateFormat, type ActivityType } from './prompt';
 import type { PageContent } from './pdf';
 
 export type Provider = 'anthropic' | 'openai';
@@ -77,20 +77,29 @@ export interface FieldFlag {
   reason: string;
 }
 
+const TRADE_TYPES: readonly ActivityType[] = ['BUY', 'SELL'];
+const AMOUNT_REQUIRED_TYPES: readonly ActivityType[] = ['BUY', 'SELL', 'DIVIDEND'];
+
 export function evaluateConfidence(txn: ExtractedTransaction): FieldFlag[] {
   const flags: FieldFlag[] = [];
-  if (txn.unitPrice === 0 && ['BUY', 'SELL'].includes(txn.activityType))
+  const isTrade = TRADE_TYPES.includes(txn.activityType);
+  if (txn.unitPrice === 0 && isTrade)
     flags.push({ field: 'unitPrice', reason: 'Price is $0 for a trade' });
   if (!txn.symbol)
     flags.push({ field: 'symbol', reason: 'Missing symbol' });
   if (!txn.date)
     flags.push({ field: 'date', reason: 'Missing date' });
-  if (txn.quantity === 0 && ['BUY', 'SELL'].includes(txn.activityType))
+  if (txn.quantity === 0 && isTrade)
     flags.push({ field: 'quantity', reason: 'Zero quantity for a trade' });
-  if (txn.amount === 0 && ['BUY', 'SELL', 'DIVIDEND'].includes(txn.activityType))
+  if (txn.amount === 0 && AMOUNT_REQUIRED_TYPES.includes(txn.activityType))
     flags.push({ field: 'amount', reason: 'Zero amount' });
   if (txn.fee > txn.amount && txn.amount > 0)
     flags.push({ field: 'fee', reason: 'Fee exceeds transaction amount' });
+  if (isTrade && txn.quantity > 0 && txn.unitPrice > 0 && txn.amount !== 0) {
+    const expected = txn.quantity * txn.unitPrice;
+    if (Math.abs(txn.amount - expected) / Math.abs(txn.amount) > 0.01)
+      flags.push({ field: 'amount', reason: "Amount doesn't match quantity × price" });
+  }
   return flags;
 }
 
@@ -102,13 +111,15 @@ export async function extractTransactions(
   pages: PageContent[],
   signal?: AbortSignal,
   onProgress?: (current: number, total: number) => void,
+  dateFormat: DateFormat = 'DD/MM/YYYY',
 ): Promise<ExtractedTransaction[]> {
   if (pages.length === 0) return [];
 
   const chunks = chunkPages(pages);
+  const systemPrompt = buildSystemPrompt(dateFormat);
 
   if (chunks.length === 1) {
-    return extractChunk(provider, apiKey, chunks[0], signal);
+    return extractChunk(provider, apiKey, chunks[0], signal, systemPrompt);
   }
 
   const allResults: ExtractedTransaction[] = [];
@@ -116,7 +127,7 @@ export async function extractTransactions(
     signal?.throwIfAborted();
     onProgress?.(i + 1, chunks.length);
     try {
-      const results = await extractChunk(provider, apiKey, chunks[i], signal);
+      const results = await extractChunk(provider, apiKey, chunks[i], signal, systemPrompt);
       allResults.push(...results);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') throw err;
@@ -132,11 +143,12 @@ function extractChunk(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   if (provider === 'anthropic') {
-    return extractWithAnthropic(apiKey, pages, signal);
+    return extractWithAnthropic(apiKey, pages, signal, systemPrompt);
   }
-  return extractWithOpenAI(apiKey, pages, signal);
+  return extractWithOpenAI(apiKey, pages, signal, systemPrompt);
 }
 
 function buildAnthropicContent(pages: PageContent[]): AnthropicContentBlock[] {
@@ -191,6 +203,7 @@ async function extractWithAnthropic(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   const content = buildAnthropicContent(pages);
 
@@ -205,7 +218,7 @@ async function extractWithAnthropic(
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250514',
       max_tokens: 16384,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: 'user', content }],
     }),
     signal,
@@ -225,6 +238,7 @@ async function extractWithOpenAI(
   apiKey: string,
   pages: PageContent[],
   signal?: AbortSignal,
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<ExtractedTransaction[]> {
   const content = buildOpenAIContent(pages);
 
@@ -239,7 +253,7 @@ async function extractWithOpenAI(
       max_completion_tokens: 16384,
       reasoning_effort: 'low',
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content },
       ],
       response_format: {
@@ -266,7 +280,7 @@ async function extractWithOpenAI(
   return parseResponse(choice?.message?.content);
 }
 
-function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
+export function parseResponse(text: string | undefined | null): ExtractedTransaction[] {
   if (!text) throw new Error('Empty response from AI provider. The document may be unreadable — try a clearer scan or image.');
 
   let parsed: unknown;
@@ -299,7 +313,7 @@ export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?)
 export const SYMBOL_RE = /^[\w.$\-/]{0,20}$/;
 export const CURRENCY_RE = /^[A-Z]{3,5}$/;
 
-function validateTransaction(t: unknown): ExtractedTransaction {
+export function validateTransaction(t: unknown): ExtractedTransaction {
   const obj = (typeof t === 'object' && t !== null ? t : {}) as Record<string, unknown>;
   return {
     date: typeof obj.date === 'string' && ISO_DATE_RE.test(obj.date) ? obj.date : '',

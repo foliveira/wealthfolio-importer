@@ -1,6 +1,6 @@
 {
   "name": "wealthfolio-ai-importer-addon",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "clean": "rm -rf dist",
     "package": "zip -r ai-importer.zip manifest.json dist/ README.md",
-    "bundle": "npm run clean && npm run build && npm run package"
+    "bundle": "npm run clean && npm run build && npm run package",
+    "test": "vitest run"
   },
   "dependencies": {
     "pdfjs-dist": "^5.6.205"
@@ -26,6 +27,7 @@
     "react-dom": "^19.0.0",
     "rollup-plugin-external-globals": "^0.13.0",
     "typescript": "^5.7.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.3"
   }
 }
