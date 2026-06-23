@@ -2,17 +2,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 // @ts-expect-error -- Vite ?raw import has no type declaration
 import pdfjsWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
+import { isGarbled, reconstructLayout, type PositionedTextItem } from './pdf-layout';
 
 const MAX_PAGES = 100;
 export const LARGE_DOC_THRESHOLD = 50;
 const RENDER_SCALE = 2.0;
 const JPEG_QUALITY = 0.85;
 
-// Text extraction thresholds
+// Minimum reconstructed text length for a page to be treated as text-native.
 const MIN_TEXT_LENGTH = 50;
-const GARBLE_THRESHOLD = 0.3;
-const Y_TOLERANCE = 2;
-const SPACE_PER_UNIT = 4;
 
 // Blob URL from inlined worker source — must remain alive for the app lifetime
 // so pdf.js can spawn workers on demand. Intentionally never revoked.
@@ -27,62 +25,7 @@ export type PageContent =
   | { mode: 'text'; text: string; pageNumber: number }
   | { mode: 'image'; base64: string; mediaType: ImageMediaType; pageNumber: number };
 
-interface PositionedTextItem {
-  str: string;
-  x: number;
-  y: number;
-  width: number;
-}
-
 // --- Text extraction ---
-
-function isGarbled(text: string): boolean {
-  const stripped = text.replace(/\s/g, '');
-  if (stripped.length === 0) return true;
-  const printable = stripped.replace(/[\x20-\x7E\u00A0-\u00FF\u20AC\u00A3\u00A5]/g, '');
-  return printable.length / stripped.length > GARBLE_THRESHOLD;
-}
-
-function reconstructLayout(items: PositionedTextItem[]): string {
-  if (items.length === 0) return '';
-
-  // Sort by Y descending (top of page first in PDF coordinate space)
-  const sorted = [...items].sort((a, b) => b.y - a.y);
-
-  // Group into rows: walk sorted list, start new row when Y gap > tolerance
-  const rows: PositionedTextItem[][] = [];
-  let currentRow: PositionedTextItem[] = [sorted[0]];
-  let currentY = sorted[0].y;
-
-  for (let i = 1; i < sorted.length; i++) {
-    if (Math.abs(sorted[i].y - currentY) > Y_TOLERANCE) {
-      rows.push(currentRow);
-      currentRow = [sorted[i]];
-      currentY = sorted[i].y;
-    } else {
-      currentRow.push(sorted[i]);
-    }
-  }
-  rows.push(currentRow);
-
-  // For each row: sort by X, reconstruct with proportional spacing
-  const lines: string[] = [];
-  for (const row of rows) {
-    row.sort((a, b) => a.x - b.x);
-    let line = '';
-    for (let i = 0; i < row.length; i++) {
-      if (i > 0) {
-        const gap = row[i].x - (row[i - 1].x + row[i - 1].width);
-        const spaces = Math.max(1, Math.round(gap / SPACE_PER_UNIT));
-        line += ' '.repeat(spaces);
-      }
-      line += row[i].str;
-    }
-    lines.push(line);
-  }
-
-  return lines.join('\n');
-}
 
 async function extractPageText(page: pdfjsLib.PDFPageProxy): Promise<string | null> {
   const content = await page.getTextContent();
