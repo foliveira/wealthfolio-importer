@@ -25,6 +25,9 @@ export interface ExtractedTransaction {
   currency: string;
   fee: number;
   amount: number;
+  // Conversion rate as printed on the document for cross-currency transactions.
+  // Omitted when the document shows no explicit rate. See validateTransaction.
+  fxRate?: number;
 }
 
 export const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const;
@@ -42,10 +45,12 @@ Each transaction must have these fields:
 - currency: ISO 4217 code (USD, EUR, GBP, etc.)
 - fee: Transaction fee. Use 0 if none or unknown.
 - amount: Total amount. For BUY/SELL: quantity × unitPrice. For cash activities: the cash amount.
+- fxRate: Currency conversion rate, ONLY if the document prints an explicit rate for this transaction (e.g. "USD/EUR 0.9182"). Copy it exactly as shown — do not invert or compute it. Use null when no rate is printed.
 
 Rules:
 - Dates in the source document use ${dateFormat} ordering. Interpret ambiguous dates accordingly.
 - Only extract actual transactions, NOT summaries, balances, or totals.
+- Each transaction must appear once. Do not also extract it from a summary/totals section if it already appears in a detail/activity table.
 - If a transaction type does not match any activityType exactly, choose the closest match.
 - If you cannot determine a field, use a reasonable default.
 - Return an empty array [] if no transactions are found.`;
@@ -69,8 +74,9 @@ export const TRANSACTION_SCHEMA = {
           currency: { type: 'string', description: 'ISO 4217 currency code (USD, EUR, GBP, etc.).' },
           fee: { type: 'number', description: 'Transaction fee. Use 0 if none or unknown.' },
           amount: { type: 'number', description: 'Total amount. For BUY/SELL: quantity × unitPrice.' },
+          fxRate: { type: ['number', 'null'], description: 'Conversion rate exactly as printed on the document for cross-currency transactions. null if no rate is shown.' },
         },
-        required: ['date', 'symbol', 'quantity', 'activityType', 'unitPrice', 'currency', 'fee', 'amount'],
+        required: ['date', 'symbol', 'quantity', 'activityType', 'unitPrice', 'currency', 'fee', 'amount', 'fxRate'],
         additionalProperties: false,
       },
     },
