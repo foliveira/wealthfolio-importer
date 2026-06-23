@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { SecretsAPI, HostAPI } from '../types';
 import type { AIConfig } from '../services/ai';
-import { fetchModels, normalizeBaseUrl, buildConnectionError } from '../services/ai';
+import { fetchModels, normalizeBaseUrl, DEFAULT_BASE_URL } from '../services/ai';
 import { DATE_FORMATS, type DateFormat } from '../services/prompt';
 import { ModelCombobox } from './ModelCombobox';
-
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 interface SettingsProps {
   secrets: SecretsAPI;
@@ -26,7 +24,6 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // --- Load saved settings + migration ---
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   useEffect(() => {
     (async () => {
       try {
@@ -70,6 +67,7 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
         logger.error(`[AI Importer] Failed to load settings: ${e}`);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
 
   useEffect(() => {
@@ -148,7 +146,7 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
       {migrationBanner && (
         <div style={{ padding: '10px 12px', borderRadius: '6px', background: 'hsl(38 92% 50% / 0.1)', color: 'hsl(38 92% 40%)', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{migrationBanner}</span>
-          <button onClick={() => setMigrationBanner('')} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>x</button>
+          <button onClick={() => setMigrationBanner('')} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>x</button>
         </div>
       )}
 
@@ -160,6 +158,7 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
           type={showKey ? 'text' : 'password'}
           value={config.apiKey}
           onChange={(e) => handleKeyChange(e.target.value)}
+          aria-label="API key"
           placeholder="API Key (optional for local providers)"
           style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: '13px' }}
         />
@@ -195,8 +194,9 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
 
       {/* Model */}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <label style={{ fontSize: '13px', fontWeight: 500, minWidth: '48px' }}>Model</label>
+        <label htmlFor="model-combobox" style={{ fontSize: '13px', fontWeight: 500, minWidth: '48px' }}>Model</label>
         <ModelCombobox
+          id="model-combobox"
           value={config.model}
           onChange={(model) => updateConfig({ model })}
           models={models}
@@ -213,8 +213,9 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
 
       {showAdvanced && (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <label style={{ fontSize: '13px', fontWeight: 500, minWidth: '64px' }}>Base URL</label>
+          <label htmlFor="base-url" style={{ fontSize: '13px', fontWeight: 500, minWidth: '64px' }}>Base URL</label>
           <input
+            id="base-url"
             type="text"
             value={config.baseUrl}
             onChange={(e) => updateConfig({ baseUrl: e.target.value })}
@@ -234,6 +235,7 @@ export function Settings({ secrets, logger, config, onConfigChange, dateFormat, 
         <select
           value={dateFormat}
           onChange={(e) => handleDateFormatChange(e.target.value)}
+          aria-label="Document date format"
           style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: '13px' }}
         >
           {DATE_FORMATS.map((f) => (

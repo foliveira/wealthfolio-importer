@@ -5,15 +5,18 @@ interface ModelComboboxProps {
   value: string;
   onChange: (model: string) => void;
   models: string[] | null; // null = not fetched yet / failed
+  id?: string;
 }
 
-export function ModelCombobox({ value, onChange, models }: ModelComboboxProps) {
+export function ModelCombobox({ value, onChange, models, id = 'model-combobox' }: ModelComboboxProps) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const listId = `${id}-listbox`;
+  const optionId = (idx: number) => `${id}-opt-${idx}`;
 
   useEffect(() => { setQuery(value); }, [value]);
 
@@ -28,10 +31,20 @@ export function ModelCombobox({ value, onChange, models }: ModelComboboxProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Scroll highlighted item into view. Declared before any early return so hook
+  // order stays stable when `models` flips from null to a list.
+  useEffect(() => {
+    if (highlightIndex >= 0 && listRef.current) {
+      const items = listRef.current.querySelectorAll('li[data-model]');
+      items[highlightIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightIndex]);
+
   // Free-text mode: no models loaded
   if (!models) {
     return (
       <input
+        id={id}
         type="text"
         value={query}
         onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); }}
@@ -82,22 +95,39 @@ export function ModelCombobox({ value, onChange, models }: ModelComboboxProps) {
     }
   }
 
-  // Scroll highlighted item into view
-  useEffect(() => {
-    if (highlightIndex >= 0 && listRef.current) {
-      const items = listRef.current.querySelectorAll('li[data-model]');
-      items[highlightIndex]?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [highlightIndex]);
+  const renderOption = (m: string, idx: number) => (
+    <li
+      key={m}
+      id={optionId(idx)}
+      role="option"
+      aria-selected={highlightIndex === idx}
+      data-model={m}
+      onClick={() => select(m)}
+      onMouseEnter={() => setHighlightIndex(idx)}
+      style={{
+        ...itemStyle,
+        background: highlightIndex === idx ? 'var(--primary)' : 'transparent',
+        color: highlightIndex === idx ? 'var(--primary-foreground)' : 'var(--foreground)',
+      }}
+    >
+      {m}
+    </li>
+  );
 
   const hasRecommended = filteredRecommended.length > 0;
   const hasOther = showAll && filteredOther.length > 0;
-  let itemIndex = -1;
+  const recommendedCount = filteredRecommended.length;
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative', flex: 1 }}>
       <input
+        id={id}
         type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && highlightIndex >= 0 ? optionId(highlightIndex) : undefined}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -113,31 +143,16 @@ export function ModelCombobox({ value, onChange, models }: ModelComboboxProps) {
       />
 
       {open && allVisible.length > 0 && (
-        <ul ref={listRef} style={dropdownStyle}>
+        <ul ref={listRef} role="listbox" id={listId} style={dropdownStyle}>
           {hasRecommended && (
-            <li style={sectionHeaderStyle}>Recommended</li>
+            <li role="presentation" style={sectionHeaderStyle}>Recommended</li>
           )}
-          {filteredRecommended.map(m => {
-            itemIndex++;
-            const idx = itemIndex;
-            return (
-              <li
-                key={m}
-                data-model={m}
-                onClick={() => select(m)}
-                style={{
-                  ...itemStyle,
-                  background: highlightIndex === idx ? 'var(--primary)' : 'transparent',
-                  color: highlightIndex === idx ? 'var(--primary-foreground)' : 'var(--foreground)',
-                }}
-              >
-                {m}
-              </li>
-            );
-          })}
+          {hasRecommended && filteredRecommended.map((m, i) => renderOption(m, i))}
 
           {hasRecommended && !showAll && other.length > 0 && (
             <li
+              role="option"
+              aria-selected={false}
               onClick={() => setShowAll(true)}
               style={{ ...itemStyle, color: 'var(--muted-foreground)', fontStyle: 'italic', cursor: 'pointer' }}
             >
@@ -147,47 +162,13 @@ export function ModelCombobox({ value, onChange, models }: ModelComboboxProps) {
 
           {hasOther && (
             <>
-              <li style={sectionHeaderStyle}>All Models</li>
-              {filteredOther.map(m => {
-                itemIndex++;
-                const idx = itemIndex;
-                return (
-                  <li
-                    key={m}
-                    data-model={m}
-                    onClick={() => select(m)}
-                    style={{
-                      ...itemStyle,
-                      background: highlightIndex === idx ? 'var(--primary)' : 'transparent',
-                      color: highlightIndex === idx ? 'var(--primary-foreground)' : 'var(--foreground)',
-                    }}
-                  >
-                    {m}
-                  </li>
-                );
-              })}
+              <li role="presentation" style={sectionHeaderStyle}>All Models</li>
+              {filteredOther.map((m, j) => renderOption(m, recommendedCount + j))}
             </>
           )}
 
           {/* No recommended at all — show everything directly */}
-          {!hasRecommended && allVisible.map(m => {
-            itemIndex++;
-            const idx = itemIndex;
-            return (
-              <li
-                key={m}
-                data-model={m}
-                onClick={() => select(m)}
-                style={{
-                  ...itemStyle,
-                  background: highlightIndex === idx ? 'var(--primary)' : 'transparent',
-                  color: highlightIndex === idx ? 'var(--primary-foreground)' : 'var(--foreground)',
-                }}
-              >
-                {m}
-              </li>
-            );
-          })}
+          {!hasRecommended && allVisible.map((m, i) => renderOption(m, i))}
         </ul>
       )}
     </div>
