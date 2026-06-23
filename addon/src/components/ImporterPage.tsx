@@ -1,16 +1,33 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AddonContext, Account, ActivityImport } from '../types';
-import type { AIConfig } from '../services/ai';
+import { type AIConfig, DEFAULT_BASE_URL, extractTransactions, evaluateConfidence, findDuplicateIndices } from '../services/ai';
 import type { PageContent } from '../services/pdf';
 import type { ExtractedTransaction, DateFormat } from '../services/prompt';
-import { extractTransactions, evaluateConfidence, ISO_DATE_RE, SYMBOL_RE, CURRENCY_RE } from '../services/ai';
+import { toActivityImport, partitionChecked } from '../services/importer';
 import { Settings } from './Settings';
 import { Upload } from './Upload';
 import { ReviewTable } from './ReviewTable';
+import { useConfirm } from './ConfirmDialog';
 
 type Step = 'upload' | 'extracting' | 'review' | 'importing' | 'done';
 
 const SPIN_STYLE = <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>;
+
+// The SDK bridge doesn't pass accountId at the root level, which the self-hosted
+// Axum backend requires — so the import calls go straight to the REST API.
+async function apiCall<T>(path: string, body: unknown): Promise<T> {
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
 
 interface ImporterPageProps {
   ctx: AddonContext;
@@ -18,7 +35,7 @@ interface ImporterPageProps {
 
 export function ImporterPage({ ctx }: ImporterPageProps) {
   const [config, setConfig] = useState<AIConfig>({
-    baseUrl: 'https://api.openai.com/v1',
+    baseUrl: DEFAULT_BASE_URL,
     apiKey: '',
     model: '',
   });
@@ -32,8 +49,10 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
   const [importResult, setImportResult] = useState('');
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const doneRef = useRef<HTMLDivElement>(null);
+  const { confirm, dialog } = useConfirm();
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load accounts once
   useEffect(() => {
     ctx.api.accounts.getAll().then((accs) => {
       setAccounts(accs);
@@ -42,7 +61,14 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to load accounts: ${message}`);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: load accounts once
   }, []);
+
+  // Move focus to the newly revealed panel so keyboard/screen-reader users follow the flow.
+  useEffect(() => {
+    if (step === 'review') reviewHeadingRef.current?.focus();
+    else if (step === 'done') doneRef.current?.focus();
+  }, [step]);
 
   async function handleFile(file: File) {
     setError('');
@@ -53,26 +79,38 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       return;
     }
 
+    // Cancel any in-flight extraction, then take ownership of the abort slot. All
+    // state writes below are guarded on `abortRef.current === abort` so a superseded
+    // call can never clobber the current one's controller or step.
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     setStep('extracting');
     setProgress(null);
-
-    // Cancel any in-flight extraction before starting a new one
-    if (abortRef.current) abortRef.current.abort();
 
     try {
       let pages: PageContent[];
 
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         const { pdfToContent, LARGE_DOC_THRESHOLD } = await import('../services/pdf');
+        if (abort.signal.aborted) return;
         const result = await pdfToContent(file);
         pages = result.pages;
+        if (abort.signal.aborted) return;
 
-        // eslint-disable-next-line no-restricted-globals
-        if (pages.length > LARGE_DOC_THRESHOLD && !confirm(
-          `This document has ${pages.length} pages. Processing may take several minutes and consume significant API credits. Continue?`,
-        )) {
-          setStep('upload');
-          return;
+        if (pages.length > LARGE_DOC_THRESHOLD) {
+          const ok = await confirm({
+            title: 'Large document',
+            message: `This document has ${pages.length} pages. Processing may take several minutes and consume significant API credits. Continue?`,
+            confirmLabel: 'Continue',
+            cancelLabel: 'Cancel',
+          });
+          if (!ok) {
+            if (abortRef.current === abort) { abortRef.current = null; setStep('upload'); }
+            return;
+          }
+          if (abort.signal.aborted) return;
         }
       } else {
         const { imageToBase64, getMediaType } = await import('../services/pdf');
@@ -80,13 +118,18 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         pages = [{ mode: 'image', base64, mediaType: getMediaType(file), pageNumber: 1 }];
       }
 
-      const abort = new AbortController();
-      abortRef.current = abort;
-
-      const extracted = await extractTransactions(config, pages, abort.signal, (c, t) => setProgress({ current: c, total: t }), dateFormat);
+      const extracted = await extractTransactions(
+        config,
+        pages,
+        abort.signal,
+        (c, t) => { if (abortRef.current === abort) setProgress({ current: c, total: t }); },
+        dateFormat,
+      );
+      if (abortRef.current !== abort) return; // superseded by a newer upload
       setTransactions(extracted);
       setStep('review');
     } catch (err: unknown) {
+      if (abortRef.current !== abort) return; // stale call — ignore its failure
       if (err instanceof Error && err.name === 'AbortError') {
         setStep('upload');
         return;
@@ -94,8 +137,10 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       setError(err instanceof Error ? err.message : String(err));
       setStep('upload');
     } finally {
-      abortRef.current = null;
-      setProgress(null);
+      if (abortRef.current === abort) {
+        abortRef.current = null;
+        setProgress(null);
+      }
     }
   }
 
@@ -109,83 +154,51 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     setStep('importing');
 
     try {
-      const draft: ActivityImport[] = transactions.map((t, i) => {
-        const date = ISO_DATE_RE.test(t.date) ? t.date : new Date().toISOString();
-        const symbol = SYMBOL_RE.test(t.symbol) ? t.symbol : '';
-        const currency = CURRENCY_RE.test(t.currency) ? t.currency : 'USD';
-        return {
-          accountId: selectedAccount,
-          date,
-          activityType: t.activityType,
-          symbol,
-          quantity: Math.max(0, Number(t.quantity) || 0),
-          unitPrice: Math.max(0, Number(t.unitPrice) || 0),
-          currency,
-          fee: Math.max(0, Number(t.fee) || 0),
-          amount: Number(t.amount) || 0,
-          quoteCcy: currency,
-          instrumentType: 'Equity',
-          lineNumber: i + 1,
-          isValid: true,
-          isDraft: false,
-          forceImport: false,
-        };
-      });
-
+      const draft = transactions.map((t, i) => toActivityImport(t, selectedAccount, i + 1));
       ctx.api.logger.debug(`[AI Importer] Sending ${draft.length} activities to checkImport`);
 
-      // Call API directly — the SDK bridge doesn't pass accountId at root level
-      // which the self-hosted Axum backend requires
-      async function apiCall<T>(path: string, body: unknown): Promise<T> {
-        const resp = await fetch(path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`API ${resp.status}: ${text}`);
-        }
-        return resp.json();
-      }
-
-      const requestBody = { accountId: selectedAccount, activities: draft };
-
-      // Resolve symbols (populates exchangeMic, symbolName, asset lookups)
+      // Resolve symbols and detect duplicates (populates exchangeMic, symbolName, duplicateOfId)
       const checked = await apiCall<ActivityImport[]>(
         '/api/v1/activities/import/check',
-        requestBody,
+        { accountId: selectedAccount, activities: draft },
       );
-      const valid = checked.filter((a) => a.isValid);
-      const invalid = checked.filter((a) => !a.isValid);
+      const { valid, duplicates, unresolved } = partitionChecked(checked);
 
-      // When some transactions have unresolved symbols, ask the user to force-import
-      let toImport = valid;
+      let toImport = [...valid];
       let forceImported = 0;
 
-      if (invalid.length > 0) {
-        const unresolvedSymbols = [...new Set(invalid.map((a) => a.symbol).filter(Boolean))];
-        const symbolList = unresolvedSymbols.length > 0
-          ? unresolvedSymbols.join(', ')
-          : 'unknown symbols';
+      // Unresolved (non-duplicate) symbols: offer force-import. Duplicates are never
+      // swept in here — they're skipped so the same statement can't be re-imported.
+      if (unresolved.length > 0) {
+        const symbols = [...new Set(unresolved.map((a) => a.symbol).filter(Boolean))];
+        const symbolList = symbols.length > 0 ? symbols.join(', ') : 'unknown symbols';
         const message = valid.length > 0
-          ? `${invalid.length} transaction(s) have symbols not found in market data (${symbolList}).\n\n${valid.length} transaction(s) resolved successfully.\n\nImport all transactions anyway? (unresolved symbols will be created as custom assets)`
-          : `None of the ${invalid.length} transaction(s) could be resolved in market data (${symbolList}).\n\nImport them anyway? (symbols will be created as custom assets)`;
+          ? `${unresolved.length} transaction(s) couldn't be resolved in market data (${symbolList}).\n\n${valid.length} transaction(s) resolved successfully.\n\nImport the unresolved ones anyway? They'll be created as custom assets.`
+          : `None of the ${unresolved.length} transaction(s) could be resolved in market data (${symbolList}).\n\nImport them anyway? They'll be created as custom assets.`;
 
-        // eslint-disable-next-line no-restricted-globals
-        if (confirm(message)) {
-          const forced = invalid.map((a) => ({ ...a, isValid: true, forceImport: true }));
-          toImport = [...valid, ...forced];
-          forceImported = forced.length;
-        } else if (valid.length > 0) {
-          // User declined — only import the valid ones
-          toImport = valid;
-        } else {
-          // Nothing to import and user declined force-import
+        const ok = await confirm({
+          title: 'Unresolved symbols',
+          message,
+          confirmLabel: 'Import anyway',
+          cancelLabel: 'Back to review',
+        });
+        if (ok) {
+          toImport = [...valid, ...unresolved.map((a) => ({ ...a, isValid: true, forceImport: true }))];
+          forceImported = unresolved.length;
+        } else if (valid.length === 0) {
           setStep('review');
           return;
         }
+        // declined with some valid rows → import only the valid ones
+      }
+
+      if (toImport.length === 0) {
+        const note = duplicates.length > 0
+          ? `${duplicates.length} duplicate transaction(s) already in your portfolio were skipped.`
+          : 'No transactions to import.';
+        setImportResult(note);
+        setStep('done');
+        return;
       }
 
       const result = await apiCall<{ activities: ActivityImport[]; summary?: { imported?: number } }>(
@@ -193,17 +206,16 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
         { accountId: selectedAccount, activities: toImport },
       );
       const imported = result?.summary?.imported ?? toImport.length;
-      const skipped = transactions.length - toImport.length;
       let msg = `Successfully imported ${imported} transaction(s).`;
-      if (forceImported > 0) msg += ` ${forceImported} with custom symbols.`;
-      if (skipped > 0) msg += ` ${skipped} skipped.`;
+      if (forceImported > 0) msg += ` ${forceImported} as custom symbols.`;
+      if (duplicates.length > 0) msg += ` ${duplicates.length} duplicate(s) skipped.`;
+      const declinedUnresolved = unresolved.length - forceImported;
+      if (declinedUnresolved > 0) msg += ` ${declinedUnresolved} unresolved skipped.`;
       setImportResult(msg);
       setStep('done');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const detail = typeof err === 'object' && err !== null ? JSON.stringify(err) : '';
       ctx.api.logger.error(`[AI Importer] Import failed: ${message}`);
-      if (detail && detail !== '{}') ctx.api.logger.error(`[AI Importer] Error detail: ${detail}`);
       // Show a sanitized message to the user — full details stay in the logger
       const userMessage = message.length > 200 ? message.slice(0, 200) + '...' : message;
       setError(`Import failed: ${userMessage}`);
@@ -216,12 +228,27 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
     [transactions],
   );
 
-  const warningCount = useMemo(
-    () => Array.from(flagsByIndex.values()).reduce((sum, f) => sum + f.length, 0),
-    [flagsByIndex],
+  const duplicateIndices = useMemo(
+    () => findDuplicateIndices(transactions),
+    [transactions],
   );
 
-  function startOver() {
+  const warningCount = useMemo(
+    () => Array.from(flagsByIndex.values()).reduce((sum, f) => sum + f.length, 0) + duplicateIndices.size,
+    [flagsByIndex, duplicateIndices],
+  );
+
+  async function startOver() {
+    if (transactions.length > 0) {
+      const ok = await confirm({
+        title: 'Discard transactions?',
+        message: `You have ${transactions.length} extracted transaction(s) that haven't been imported. Start over and discard them?`,
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setStep('upload');
     setTransactions([]);
     setError('');
@@ -253,14 +280,19 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       {/* Upload */}
       {step === 'upload' && (
         <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+          {!canUpload && (
+            <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'hsl(38 92% 40%)' }}>
+              Select a model above to enable upload — click “Test Connection”, then pick a model.
+            </p>
+          )}
           <Upload onFile={handleFile} disabled={!canUpload} />
         </div>
       )}
 
       {/* Extracting */}
       {step === 'extracting' && (
-        <div style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
-          <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div role="status" aria-live="polite" style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
+          <div aria-hidden="true" style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <p style={{ marginTop: '12px' }}>Extracting transactions from <strong>{fileName}</strong>...</p>
           {progress && progress.total > 1 && (
             <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
@@ -279,11 +311,21 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
       {/* Review */}
       {step === 'review' && (
         <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <ReviewTable transactions={transactions} onChange={setTransactions} flagsByIndex={flagsByIndex} />
+          <h3 ref={reviewHeadingRef} tabIndex={-1} style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600, outline: 'none' }}>
+            Review transactions
+          </h3>
+          <ReviewTable
+            transactions={transactions}
+            onChange={setTransactions}
+            flagsByIndex={flagsByIndex}
+            duplicateIndices={duplicateIndices}
+            warningCount={warningCount}
+          />
 
           <div style={{ marginTop: '16px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '13px', fontWeight: 500 }}>Import to:</label>
+            <label htmlFor="import-account" style={{ fontSize: '13px', fontWeight: 500 }}>Import to:</label>
             <select
+              id="import-account"
               value={selectedAccount}
               onChange={(e) => setSelectedAccount(e.target.value)}
               style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: '13px' }}
@@ -314,15 +356,15 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
       {/* Importing */}
       {step === 'importing' && (
-        <div style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
-          <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div role="status" aria-live="polite" style={{ padding: '32px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
+          <div aria-hidden="true" style={{ display: 'inline-block', width: '24px', height: '24px', border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <p style={{ marginTop: '12px' }}>Importing transactions...</p>
         </div>
       )}
 
       {/* Done */}
       {step === 'done' && (
-        <div style={{ padding: '24px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center' }}>
+        <div ref={doneRef} tabIndex={-1} role="status" style={{ padding: '24px 16px', borderRadius: '8px', border: '1px solid var(--border)', textAlign: 'center', outline: 'none' }}>
           <p style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(142 71% 45%)' }}>{importResult}</p>
           <button
             onClick={startOver}
@@ -335,11 +377,12 @@ export function ImporterPage({ ctx }: ImporterPageProps) {
 
       {/* Error */}
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'hsl(0 84% 60% / 0.1)', color: 'hsl(0 84% 60%)', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
+        <div role="alert" style={{ padding: '12px 16px', borderRadius: '8px', background: 'hsl(0 84% 60% / 0.1)', color: 'hsl(0 84% 60%)', fontSize: '13px', whiteSpace: 'pre-wrap' }}>
           {error}
         </div>
       )}
 
+      {dialog}
       {SPIN_STYLE}
     </div>
   );
