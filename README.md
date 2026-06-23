@@ -19,12 +19,13 @@ For self-hosted instances, set `WF_ADDONS_DIR` and extract the ZIP there.
 
 ## AI Providers
 
-You need an API key from one of:
+The addon works with any OpenAI-compatible endpoint that supports vision (image input) and structured output. Set the base URL, API key, and model in the addon's settings panel.
 
-- [OpenAI](https://platform.openai.com/api-keys) — GPT-5.4-mini
-- [Anthropic](https://console.anthropic.com/) — Claude Sonnet
+- **[OpenAI](https://platform.openai.com/api-keys)** — GPT-5.4-mini (default). Recommended for accuracy.
+- **Local models** — point the base URL at [Ollama](https://docs.ollama.com) (`http://localhost:11434/v1`) or LM Studio (`http://localhost:1234/v1`); no API key required. Use a vision-capable model and enable CORS for this app's origin.
+- **Other providers** — any service exposing an OpenAI-compatible `/chat/completions` endpoint with vision and JSON-schema output works.
 
-Both providers use vision-based document extraction with structured output. Configure your key in the addon's settings panel.
+Your documents and API key are sent only to the endpoint you configure. For your protection, the addon refuses to send an API key over plain HTTP to a non-local host.
 
 ## What's Supported
 
@@ -41,7 +42,7 @@ Both providers use vision-based document extraction with structured output. Conf
 ## What's Not Supported
 
 - **Automatic symbol lookup** — the AI extracts ticker symbols as-is from the document. If your broker uses a non-standard symbol format, you may need to edit it in the review table.
-- **Multi-currency FX conversion** — transactions are imported in the currency shown on the document. Cross-currency reconciliation is left to Wealthfolio.
+- **Multi-currency FX conversion** — transactions are imported in the currency shown on the document. When the document prints an explicit conversion rate for a transaction, the addon passes it through to Wealthfolio as metadata, but it does not convert amounts itself or look up historical rates.
 - **Scanned/handwritten documents** — scanned PDFs fall back to vision-based extraction automatically, but poor scan quality will reduce accuracy. Handwritten documents are not supported.
 
 ## Privacy
