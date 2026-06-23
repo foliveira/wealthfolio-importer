@@ -36,7 +36,7 @@ export default defineConfig({
       },
     },
     outDir: 'dist',
-    minify: false,
-    sourcemap: true,
+    minify: 'esbuild',
+    sourcemap: false,
   },
 });

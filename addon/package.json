@@ -10,7 +10,14 @@
     "clean": "rm -rf dist",
     "package": "zip -r ai-importer.zip manifest.json dist/ README.md",
     "bundle": "npm run clean && npm run build && npm run package",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "version:check": "node -e \"const m=require('./manifest.json').version,p=require('./package.json').version;if(m!==p){console.error('Version mismatch: manifest='+m+' package='+p);process.exit(1)}console.log('versions in sync: '+p)\"",
+    "check": "npm run version:check && npm run typecheck && npm run lint && npm test"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "pdfjs-dist": "^5.6.205"
@@ -20,13 +27,18 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "rollup-plugin-external-globals": "^0.13.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.62.0",
     "vite": "^6.0.0",
     "vitest": "^4.1.3"
   }
